@@ -105,7 +105,7 @@ export default function MainPage({ initialSignedIn }: Props) {
 
       {activeTab === 'main' && (
         <div className="px-6 pb-6">
-          <NLSearch />
+          <NLSearch signedIn={signedIn} />
         </div>
       )}
     </div>
