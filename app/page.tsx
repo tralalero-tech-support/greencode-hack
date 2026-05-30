@@ -1,8 +1,5 @@
 import { cookies } from "next/headers";
-import FileGraph       from "@/components/NodeGraph";
-import NLSearch        from "@/components/NLSearch";
-import DuplicateAlert  from "@/components/DuplicateAlert";
-import GoogleAuthButton from "@/components/GoogleAuthButton";
+import MainPage from "@/components/MainPage";
 
 export const metadata = { title: "FileAtlas" };
 
@@ -10,30 +7,5 @@ export default async function ContextOSPage() {
   const cookieStore = await cookies();
   const signedIn = cookieStore.has("google_access_token");
 
-  return (
-    <div className="flex flex-col min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans">
-      <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-        <div className="flex items-center gap-3">
-          <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-green-600 text-white text-sm font-bold">F</span>
-          <div>
-            <h1 className="text-base font-bold text-zinc-900 dark:text-zinc-50 leading-none">FileAtlas</h1>
-            <p className="text-[10px] text-zinc-400 leading-tight mt-0.5">Smart File Management</p>
-          </div>
-        </div>
-        <GoogleAuthButton initialSignedIn={signedIn} />
-      </header>
-
-      <div className="px-6 pt-4">
-        <DuplicateAlert signedIn={signedIn} />
-      </div>
-
-      <main className="flex flex-1 p-6 min-h-0" style={{ minHeight: 440 }}>
-        <FileGraph isSignedIn={signedIn} />
-      </main>
-
-      <div className="px-6 pb-6">
-        <NLSearch signedIn={signedIn} />
-      </div>
-    </div>
-  );
+  return <MainPage initialSignedIn={signedIn} />;
 }

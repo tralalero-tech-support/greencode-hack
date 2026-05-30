@@ -1,7 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useState } from 'react'
 import FileGraph       from "@/components/NodeGraph";
 import ContextCard     from "@/components/ContextCard";
 import NLSearch        from "@/components/NLSearch";
@@ -14,19 +13,6 @@ type Props = { initialSignedIn: boolean };
 export default function MainPage({ initialSignedIn }: Props) {
   const [activeTab, setActiveTab] = useState<'main' | 'duplicates'>('main')
   const [signedIn, setSignedIn] = useState(initialSignedIn)
-  const router = useRouter()
-  const searchParams = useSearchParams()
-
-  useEffect(() => {
-    if (searchParams.get("auth_success")) {
-      setSignedIn(true)
-      router.replace("/")
-    }
-    if (searchParams.get("auth_error")) {
-      setSignedIn(false)
-      router.replace("/")
-    }
-  }, [searchParams, router])
 
   return (
     <div className="flex flex-col min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans">
@@ -84,7 +70,7 @@ export default function MainPage({ initialSignedIn }: Props) {
           </aside>
 
           <div className="flex flex-col flex-1 min-h-0 gap-4" style={{ minHeight: 440 }}>
-            <FileGraph />
+            <FileGraph isSignedIn={signedIn} />
           </div>
         </main>
       ) : (
