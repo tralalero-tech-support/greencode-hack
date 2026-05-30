@@ -1,8 +1,9 @@
 import { getOpenAIClient } from "./client";
 import type { DriveFile } from "@/lib/google/types";
+import type { CachedFile } from "@/lib/drive-cache";
 
 export type SearchResult = {
-  file: DriveFile;
+  file: CachedFile;
   relevanceScore: number;
   reason: string;
 };
@@ -13,77 +14,72 @@ type OpenAIMatch = {
   reason: string;
 };
 
-function toSearchContext(file: DriveFile) {
-  return {
-    id:             file.id,
-    name:           file.name,
-    type:           file.mimeType,
-    modified:       file.modifiedTime,
-    created:        file.createdTime,
-    owner:          file.owners?.[0]?.displayName,
-    lastEditedBy:   file.lastModifyingUser?.displayName,
-    description:    file.description ?? undefined,
-    contentSnippet: (file as DriveFile & { contentSnippet?: string }).contentSnippet ?? undefined,
-  };
-}
-
-const SYSTEM_PROMPT = `You are a file search assistant for ContextOS, a smart Google Drive file manager.
+const SEARCH_SYSTEM_PROMPT = `You are a file search assistant for ContextOS, a smart Google Drive file manager.
 
 The user will give you a natural language query describing a file they are looking for.
-You will receive a JSON array of Google Drive file metadata objects.
+You will receive a JSON array of Drive files, each with a pre-computed summary of its contents.
 
 Your job:
-1. Identify which files match the user's query — consider file name, type, owner, who last edited it, when it was modified, description, and any content snippets.
+1. Identify which files match the user's query — use the summary, file name, type, who last edited it, and when it was modified.
 2. Score each match from 0.0 (not relevant) to 1.0 (perfect match).
 3. Return ONLY files with a score > 0.2, ranked from highest to lowest.
 
 Respond with valid JSON only — no markdown, no extra text.
 Format:
-[
-  {
-    "id": "<file id>",
-    "relevanceScore": 0.95,
-    "reason": "Short human-readable explanation of why this matches"
-  }
-]
+[{ "id": "<file id>", "relevanceScore": 0.95, "reason": "Short explanation of why this matches" }]
 
 If nothing matches, return an empty array: []`;
 
-export async function searchDriveWithAI(
-  query: string,
-  files: DriveFile[]
-): Promise<SearchResult[]> {
-  if (files.length === 0) return [];
+const SUMMARIZE_SYSTEM_PROMPT = `You are a file indexing assistant for ContextOS, a smart Google Drive file manager.
 
-  const client = getOpenAIClient();
-  const fileContext = files.map(toSearchContext);
+You will receive a JSON array of Drive files. For each file, write a concise 1-2 sentence summary that captures:
+- What the file is about
+- Who it involves (people, projects, organizations)
+- What kind of document it is
+- Any other detail that would help someone find it later using natural language
 
-  const completion = await client.chat.completions.create({
-    model:       "gpt-4o-mini",
-    temperature: 0.1,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role:    "user",
-        content: `User query: "${query}"\n\nDrive files (${files.length} total):\n${JSON.stringify(fileContext, null, 2)}`,
-      },
-    ],
-  });
+This summary will be used to power natural language search, so focus on searchable context.
 
-  const raw = completion.choices[0].message.content?.trim() ?? "";
+Respond with valid JSON only:
+[{ "id": "<file id>", "summary": "..." }]`;
 
-  let matches: OpenAIMatch[];
+function parseMatches(raw: string): OpenAIMatch[] {
   try {
     const parsed = JSON.parse(raw);
-    // response_format: json_object may wrap the array in a key
-    matches = Array.isArray(parsed) ? parsed : (parsed.results ?? parsed.files ?? Object.values(parsed)[0]);
-    if (!Array.isArray(matches)) throw new Error("No array found");
+    const arr = Array.isArray(parsed)
+      ? parsed
+      : (parsed.results ?? parsed.files ?? Object.values(parsed)[0]);
+    if (!Array.isArray(arr)) throw new Error("No array found");
+    return arr;
   } catch {
     console.error("OpenAI returned unexpected JSON:", raw);
     return [];
   }
+}
 
+// Search against pre-computed summaries stored in the client cache
+export async function searchWithSummaries(
+  query: string,
+  files: CachedFile[]
+): Promise<SearchResult[]> {
+  if (files.length === 0) return [];
+
+  const client = getOpenAIClient();
+
+  const completion = await client.chat.completions.create({
+    model:           "gpt-4o-mini",
+    temperature:     0.1,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: SEARCH_SYSTEM_PROMPT },
+      {
+        role:    "user",
+        content: `User query: "${query}"\n\nFiles (${files.length} total):\n${JSON.stringify(files, null, 2)}`,
+      },
+    ],
+  });
+
+  const matches = parseMatches(completion.choices[0].message.content?.trim() ?? "");
   const fileMap = new Map(files.map((f) => [f.id, f]));
 
   return matches
@@ -94,4 +90,67 @@ export async function searchDriveWithAI(
       relevanceScore: m.relevanceScore,
       reason:         m.reason,
     }));
+}
+
+export type FileForSummary = {
+  id:              string;
+  name:            string;
+  mimeType:        string;
+  modifiedTime:    string;
+  lastEditedBy?:   string;
+  owner?:          string;
+  description?:    string;
+  contentSnippet?: string;
+};
+
+// Summarize a batch of files — called during indexing
+export async function summarizeFiles(
+  files: FileForSummary[]
+): Promise<{ id: string; summary: string }[]> {
+  if (files.length === 0) return [];
+
+  const client = getOpenAIClient();
+
+  const completion = await client.chat.completions.create({
+    model:           "gpt-4o-mini",
+    temperature:     0.2,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: SUMMARIZE_SYSTEM_PROMPT },
+      {
+        role:    "user",
+        content: JSON.stringify(files, null, 2),
+      },
+    ],
+  });
+
+  const raw = completion.choices[0].message.content?.trim() ?? "";
+  try {
+    const parsed = JSON.parse(raw);
+    const arr = Array.isArray(parsed)
+      ? parsed
+      : (parsed.results ?? parsed.files ?? Object.values(parsed)[0]);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    console.error("OpenAI summarize returned unexpected JSON:", raw);
+    return [];
+  }
+}
+
+// Legacy: search raw DriveFile objects without cached summaries (fallback)
+export async function searchDriveWithAI(
+  query: string,
+  files: DriveFile[]
+): Promise<SearchResult[]> {
+  const asCached: CachedFile[] = files.map((f) => ({
+    id:           f.id,
+    name:         f.name,
+    mimeType:     f.mimeType,
+    modifiedTime: f.modifiedTime,
+    webViewLink:  f.webViewLink,
+    lastEditedBy: f.lastModifyingUser?.displayName,
+    owner:        f.owners?.[0]?.displayName,
+    summary:      (f as DriveFile & { contentSnippet?: string }).contentSnippet ?? f.description ?? "",
+  }));
+  return searchWithSummaries(query, asCached);
 }
