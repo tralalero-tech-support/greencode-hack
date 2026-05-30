@@ -55,7 +55,9 @@ type Cluster = {
   }>
 }
 
-export default function DuplicateAlert() {
+type Props = { signedIn: boolean };
+
+export default function DuplicateAlert({ signedIn }: Props) {
   const [clusters, setClusters] = useState<Cluster[]>([])
   const [totalFiles, setTotalFiles] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -68,6 +70,13 @@ export default function DuplicateAlert() {
     console.log("DuplicateAlert mounted")
 
     async function scan() {
+      // If not signed in, show auth prompt immediately
+      if (!signedIn) {
+        setNotAuthed(true)
+        setLoading(false)
+        return
+      }
+
       console.log('Starting Drive scan for duplicates...');
       try {
         const res = await fetch('/api/auth/drive/scan')
@@ -88,7 +97,7 @@ export default function DuplicateAlert() {
       }
     }
     scan();
-  }, [])
+  }, [signedIn])
 
   async function handleMerge(cluster: string[], index: number) {
     setMerging(index)

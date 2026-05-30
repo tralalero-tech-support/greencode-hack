@@ -68,12 +68,21 @@ export async function POST(request: Request) {
       
       const currentParents = fileRes.data.parents || []
       
-      // Move file to new folder (remove from old parents, add to new folder)
-      await drive.files.update({
-        fileId: file.id,
-        addParents: folderId,
-        removeParents: currentParents.join(',')
-      })
+      // If file has no parents, just add it to the folder
+      if (currentParents.length === 0) {
+        await drive.files.update({
+          fileId: file.id,
+          addParents: folderId
+        })
+      } else {
+        // Move file to new folder (remove from old parents, add to new folder)
+        // Only remove the first parent to avoid "increasing parents" error
+        await drive.files.update({
+          fileId: file.id,
+          addParents: folderId,
+          removeParents: currentParents[0]
+        })
+      }
     })
 
     await Promise.all(movePromises)

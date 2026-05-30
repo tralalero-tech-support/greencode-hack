@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import FileGraph       from "@/components/NodeGraph";
 import ContextCard     from "@/components/ContextCard";
 import NLSearch        from "@/components/NLSearch";
@@ -10,6 +11,20 @@ import GoogleAuthButton from "@/components/GoogleAuthButton";
 
 export default function MainPage() {
   const [activeTab, setActiveTab] = useState<'main' | 'duplicates'>('main')
+  const [signedIn, setSignedIn] = useState(false)
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    if (searchParams.get("auth_success")) {
+      setSignedIn(true)
+      router.replace("/")
+    }
+    if (searchParams.get("auth_error")) {
+      setSignedIn(false)
+      router.replace("/")
+    }
+  }, [searchParams, router])
 
   return (
     <div className="flex flex-col min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans">
@@ -23,7 +38,7 @@ export default function MainPage() {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-zinc-400">v0.1.0</span>
-          <GoogleAuthButton initialSignedIn={false} />
+          <GoogleAuthButton initialSignedIn={signedIn} onSignedInChange={setSignedIn} />
         </div>
       </header>
 
@@ -81,7 +96,7 @@ export default function MainPage() {
                 Scan your Google Drive for duplicate files and merge them into organized version trees.
               </p>
             </div>
-            <DuplicateAlert />
+            <DuplicateAlert signedIn={signedIn} />
           </div>
         </main>
       )}
