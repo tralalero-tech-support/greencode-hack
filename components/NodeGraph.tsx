@@ -646,6 +646,7 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
             ...p, files: (p.files ?? []).map(fi => fi.id === fileId ? { ...fi, driveId: data.id } : fi),
           }));
         }
+        window.open(`https://drive.google.com/open?id=${data.id}`, "_blank");
       }
     }
   }
