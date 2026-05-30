@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useLayoutEffect } from "react";
+import { useState, useRef, useLayoutEffect, useEffect } from "react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -11,8 +11,13 @@ interface Folder   {
   files: FileItem[]; subfolders: Folder[];
   driveId?: string; driveLoaded?: boolean;
 }
-interface Project  { id: string; name: string; folders: Folder[]; driveRootId?: string }
+interface Project  { id: string; name: string; folders: Folder[]; files?: FileItem[]; driveRootId?: string }
 interface DriveItem { id: string; name: string }
+
+type TreeItem =
+  | { kind: "folder"; f: Folder; depth: number }
+  | { kind: "file"; fi: FileItem; parentFolderId: string | null; parentFolderDriveId?: string; depth: number }
+  | { kind: "more"; folderId: string; count: number; depth: number }
 
 const EXT_ICON: Record<string, string> = {
   pptx: "📊", pdf: "📕", docx: "📄", xlsx: "📈", jpg: "🖼️", png: "🖼️", mp4: "🎬",
@@ -20,7 +25,7 @@ const EXT_ICON: Record<string, string> = {
 
 // ── SVG connector ─────────────────────────────────────────────────────────────
 
-interface Line { x1: number; y1: number; x2: number; y2: number; color: string }
+interface Line { d: string; color: string }
 
 function elbowD(x1: number, y1: number, x2: number, y2: number, R = 8): string {
   if (Math.abs(y1 - y2) < 1) return `M ${x1} ${y1} H ${x2}`;
@@ -60,16 +65,38 @@ function mapAllFilesRec(fn: (fi: FileItem) => FileItem, folders: Folder[]): Fold
   }));
 }
 
-// Flatten visible folder tree respecting expansion
-function visibleTree(
+function findAllFilesRec(folders: Folder[]): FileItem[] {
+  return folders.flatMap(f => [...f.files, ...findAllFilesRec(f.subfolders)]);
+}
+
+function getAllFoldersRec(folders: Folder[]): Folder[] {
+  return folders.flatMap(f => [f, ...getAllFoldersRec(f.subfolders)]);
+}
+
+
+function visibleTreeFull(
   folders: Folder[],
   expanded: string[],
+  expandedFiles: string[],
   depth = 0,
-): Array<{ f: Folder; depth: number }> {
-  return folders.flatMap(f => [
-    { f, depth },
-    ...(expanded.includes(f.id) ? visibleTree(f.subfolders, expanded, depth + 1) : []),
-  ]);
+): TreeItem[] {
+  const LIMIT = 5;
+  const sorted = [...folders].sort((a, b) => a.name.localeCompare(b.name));
+  return sorted.flatMap(f => {
+    const isExpanded  = expanded.includes(f.id);
+    const filesExp    = expandedFiles.includes(f.id);
+    const sortedFiles = [...f.files].sort((a, b) => a.name.localeCompare(b.name));
+    const shownF      = filesExp ? sortedFiles : sortedFiles.slice(0, LIMIT);
+    const hasMore     = !filesExp && sortedFiles.length > LIMIT;
+    return [
+      { kind: "folder" as const, f, depth },
+      ...(isExpanded ? [
+        ...visibleTreeFull(f.subfolders, expanded, expandedFiles, depth + 1),
+        ...shownF.map(fi => ({ kind: "file" as const, fi, parentFolderId: f.id, parentFolderDriveId: f.driveId, depth: depth + 1 })),
+        ...(hasMore ? [{ kind: "more" as const, folderId: f.id, count: sortedFiles.length - LIMIT, depth: depth + 1 }] : []),
+      ] : []),
+    ];
+  });
 }
 
 // ── Shared micro-UI ───────────────────────────────────────────────────────────
@@ -97,7 +124,7 @@ function InlineForm({ placeholder, onConfirm, onCancel }: {
 
 interface PickerState {
   loading: boolean;
-  path: DriveItem[];       // breadcrumb; path[0] is always My Drive root
+  path: DriveItem[];
   folders: DriveItem[];
   error?: string;
 }
@@ -117,18 +144,21 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
   const [picker,     setPicker]     = useState<PickerState | null>(null);
   const [pickerBusy, setPickerBusy] = useState(false);
 
-  // ── Interaction state ────────────────────────────────────────────────────
-  const [expandedFolders, setExpandedFolders] = useState<string[]>([]);
-  const [pinFolders,  setPinFolders]  = useState<string[]>([]);
-  const [hovFolder,   setHovFolder]   = useState<string | null>(null);
-  const [pinFiles,    setPinFiles]    = useState<string[]>([]);
-  const [hovFile,     setHovFile]     = useState<string | null>(null);
+  // ── Create modal state ────────────────────────────────────────────────────
+  const [createModal,    setCreateModal]    = useState<"folder" | "file" | null>(null);
+  const [createName,     setCreateName]     = useState("");
+  const [createFileType, setCreateFileType] = useState<"document" | "presentation" | "spreadsheet">("document");
+  const [createFolderId, setCreateFolderId] = useState<string | null>(null);
 
-  // ── Add/edit state ───────────────────────────────────────────────────────
-  const [addFolder,  setAddFolder]  = useState(false);
-  const [addFileTo,  setAddFileTo]  = useState<string | null>(null);
-  const [addVerTo,   setAddVerTo]   = useState<string | null>(null);
-  const [editVer,    setEditVer]    = useState<string | null>(null);
+  // ── Interaction state ────────────────────────────────────────────────────
+  const [expandedFolders,   setExpandedFolders]   = useState<string[]>([]);
+  const [hovFolder,         setHovFolder]          = useState<string | null>(null);
+  const [pinFiles,          setPinFiles]           = useState<string[]>([]);
+  const [hovFile,           setHovFile]            = useState<string | null>(null);
+
+  // ── Edit version state ───────────────────────────────────────────────────
+  const [addVerTo,  setAddVerTo]  = useState<string | null>(null);
+  const [editVer,   setEditVer]   = useState<string | null>(null);
 
   // ── File list expand state (folders with >5 files) ──────────────────────
   const [expandedFileLists, setExpandedFileLists] = useState<string[]>([]);
@@ -142,19 +172,62 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
   } | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
 
+  // ── Shift-drag repositioning ──────────────────────────────────────────────
+  const [nodeOffsets, setNodeOffsets] = useState<Record<string, {dx: number; dy: number}>>({});
+  const shiftDragRef     = useRef<{ nodeId: string; startX: number; startY: number; startDx: number; startDy: number } | null>(null);
+  const shiftDragMovedRef = useRef(false);
+
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      const d = shiftDragRef.current;
+      if (!d) return;
+      shiftDragMovedRef.current = true;
+      setNodeOffsets(prev => ({
+        ...prev,
+        [d.nodeId]: { dx: d.startDx + e.clientX - d.startX, dy: d.startDy + e.clientY - d.startY },
+      }));
+    }
+    function onMouseUp() { shiftDragRef.current = null; }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => { window.removeEventListener("mousemove", onMouseMove); window.removeEventListener("mouseup", onMouseUp); };
+  }, []);
+
+  function startShiftDrag(e: React.MouseEvent, nodeId: string) {
+    if (!e.shiftKey) return;
+    e.preventDefault();
+    shiftDragMovedRef.current = false;
+    const cur = nodeOffsets[nodeId] ?? { dx: 0, dy: 0 };
+    shiftDragRef.current = { nodeId, startX: e.clientX, startY: e.clientY, startDx: cur.dx, startDy: cur.dy };
+  }
+
+  function didShiftDrag(): boolean {
+    if (shiftDragMovedRef.current) { shiftDragMovedRef.current = false; return true; }
+    return false;
+  }
+
   // ── Derived ───────────────────────────────────────────────────────────────
-  const activeProject = projects.find(p => p.id === activeProjectId) ?? null;
-  const allVisible    = visibleTree(activeProject?.folders ?? [], expandedFolders);
+  const activeProject   = projects.find(p => p.id === activeProjectId) ?? null;
+  const rootSyntheticId = activeProjectId ? `__root__${activeProjectId}` : "";
+  const rootFilesVisible = rootSyntheticId ? expandedFolders.includes(rootSyntheticId) : false;
+  const hasRootFiles    = (activeProject?.files?.length ?? 0) > 0;
 
-  const activeFolderIds = [...new Set([...pinFolders, ...(hovFolder ? [hovFolder] : [])])];
-  const activeFolders   = allVisible.filter(({ f }) => activeFolderIds.includes(f.id)).map(({ f }) => f);
+  const allVisible: TreeItem[] = [
+    ...visibleTreeFull(activeProject?.folders ?? [], expandedFolders, expandedFileLists),
+    ...(rootFilesVisible
+      ? [...(activeProject?.files ?? [])]
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map(fi => ({ kind: "file" as const, fi, parentFolderId: rootSyntheticId, parentFolderDriveId: activeProject?.driveRootId, depth: 0 }))
+      : []),
+  ];
 
-  type FilePlus = FileItem & { folderName: string };
-  const shownFiles: FilePlus[] = activeFolders.flatMap(f =>
-    f.files.map(fi => ({ ...fi, folderName: f.name }))
-  );
+  const activeFolderIds = [...new Set([...expandedFolders, ...(hovFolder ? [hovFolder] : [])])];
+
+  const allProjectFiles = [...findAllFilesRec(activeProject?.folders ?? []), ...(activeProject?.files ?? [])];
   const activeFileIds   = [...new Set([...pinFiles, ...(hovFile ? [hovFile] : [])])];
-  const activeFilesData = shownFiles.filter(fi => activeFileIds.includes(fi.id));
+  const activeFilesData = allProjectFiles.filter(fi => activeFileIds.includes(fi.id));
+
+  const allFolders = getAllFoldersRec(activeProject?.folders ?? []);
 
   type VerPlus = Version & { fileName: string };
   const shownVersions: VerPlus[] = activeFilesData.flatMap(fi =>
@@ -174,42 +247,86 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
     const p = productRef.current;
     if (!c || !p) return;
     const cr = c.getBoundingClientRect();
-    const mid = (el: HTMLElement) => {
+    const pos = (el: HTMLElement) => {
       const r = el.getBoundingClientRect();
-      return { left: r.left - cr.left, right: r.right - cr.left, midY: r.top - cr.top + r.height / 2 };
+      return {
+        left: r.left - cr.left, right: r.right - cr.left,
+        top: r.top - cr.top, bot: r.bottom - cr.top,
+        midY: r.top - cr.top + r.height / 2,
+      };
     };
-    const pb = mid(p);
+    const pb = pos(p);
     const next: Line[] = [];
 
-    allVisible.forEach(({ f }) => {
-      const el = folderRefs.current[f.id]; if (!el) return;
-      next.push({ x1: pb.right, y1: pb.midY, x2: mid(el).left, y2: mid(el).midY, color: "#a1a1aa" });
-    });
-    activeFolders.forEach(f => {
-      const src = folderRefs.current[f.id]; if (!src) return;
-      f.files.forEach(fi => {
-        const el = fileRefs.current[fi.id]; if (!el) return;
-        next.push({ x1: mid(src).right, y1: mid(src).midY, x2: mid(el).left, y2: mid(el).midY, color: "#6ee7b7" });
+    // ── Rectangular elbow with rounded corners, fanned from source height ────
+    type NodePos = { left: number; right: number; top: number; bot: number; midY: number };
+    function addFanned(
+      src: NodePos,
+      targets: Array<{left: number; midY: number}>,
+      color: string,
+    ) {
+      if (targets.length === 0) return;
+      const sorted = [...targets].sort((a, b) => a.midY - b.midY);
+      const pad = 5;
+      const h = Math.max(0, src.bot - src.top - pad * 2);
+      sorted.forEach((t, i) => {
+        const frac   = sorted.length === 1 ? 0.5 : i / (sorted.length - 1);
+        const startY = src.top + pad + frac * h;
+        next.push({ d: elbowD(src.right, startY, t.left, t.midY, 10), color });
       });
+    }
+
+    // project → top-level folders + synthetic root folder
+    const projectChildren: Array<{left: number; midY: number}> = [];
+    allVisible.filter(item => item.kind === "folder" && item.depth === 0).forEach(item => {
+      if (item.kind !== "folder") return;
+      const el = folderRefs.current[item.f.id]; if (!el) return;
+      const p2 = pos(el); projectChildren.push({ left: p2.left, midY: p2.midY });
     });
+    if (rootSyntheticId) {
+      const el = folderRefs.current[rootSyntheticId];
+      if (el) { const p2 = pos(el); projectChildren.push({ left: p2.left, midY: p2.midY }); }
+    }
+    addFanned(pb, projectChildren, "#a1a1aa");
+
+    // folder → its files (grouped per folder, fanned; includes synthetic root)
+    const filesByFolder = new Map<string, Array<{left: number; midY: number}>>();
+    allVisible.filter(item => item.kind === "file").forEach(item => {
+      if (item.kind !== "file" || !item.parentFolderId) return;
+      const el = fileRefs.current[item.fi.id]; if (!el) return;
+      const p2 = pos(el);
+      const pid = item.parentFolderId;
+      if (!filesByFolder.has(pid)) filesByFolder.set(pid, []);
+      filesByFolder.get(pid)!.push({ left: p2.left, midY: p2.midY });
+    });
+    filesByFolder.forEach((targets, folderId) => {
+      const folderEl = folderRefs.current[folderId]; if (!folderEl) return;
+      addFanned(pos(folderEl), targets, "#a1a1aa");
+    });
+
+    // file → versions (fanned per file)
     activeFilesData.forEach(fi => {
       const src = fileRefs.current[fi.id]; if (!src) return;
-      fi.versions.forEach(v => {
-        const el = verRefs.current[v.id]; if (!el) return;
-        next.push({ x1: mid(src).right, y1: mid(src).midY, x2: mid(el).left, y2: mid(el).midY, color: "#93c5fd" });
-      });
+      const verTargets = fi.versions.map(v => {
+        const el = verRefs.current[v.id]; if (!el) return null;
+        const p2 = pos(el); return { left: p2.left, midY: p2.midY };
+      }).filter(Boolean) as Array<{left: number; midY: number}>;
+      addFanned(pos(src), verTargets, "#93c5fd");
     });
+
     setLines(next);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pinFolders, hovFolder, pinFiles, hovFile, projects, activeProjectId, expandedFolders]);
+  }, [hovFolder, pinFiles, hovFile, projects, activeProjectId, expandedFolders, expandedFileLists, nodeOffsets]);
 
   // ── Project helpers ───────────────────────────────────────────────────────
 
   function switchProject(id: string) {
     setActiveProjectId(id);
-    setExpandedFolders([]); setPinFolders([]); setPinFiles([]);
+    setExpandedFolders([]); setPinFiles([]);
     setHovFolder(null); setHovFile(null);
-    setAddFolder(false); setAddFileTo(null); setAddVerTo(null); setEditVer(null);
+    setAddVerTo(null); setEditVer(null);
+    setExpandedFileLists([]);
+    setCreateModal(null);
   }
 
   function updateFolderInProject(folderId: string, fn: (f: Folder) => Folder) {
@@ -261,33 +378,6 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
 
   // ── CRUD ─────────────────────────────────────────────────────────────────
 
-  async function doAddFolder(name: string) {
-    if (!name.trim()) return;
-    const folderId    = uid("f");
-    const driveRootId = activeProject?.driveRootId;
-    updateTopFolders(fs => [...fs, { id: folderId, name: name.trim(), files: [], subfolders: [] }]);
-    setAddFolder(false);
-    if (driveRootId) {
-      const res  = await fetch("/api/drive/folder", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), parentId: driveRootId }),
-      });
-      const data = await res.json();
-      if (!data.error) {
-        updateFolderInProject(folderId, f => ({ ...f, driveId: data.id, driveLoaded: true }));
-      }
-    }
-  }
-
-  function doAddFile(folderId: string, name: string) {
-    if (!name.trim()) return;
-    updateFolderInProject(folderId, f => ({
-      ...f, files: [...f.files, { id: uid("fi"), name: name.trim(), ext: "pdf", versions: [] }],
-    }));
-    setAddFileTo(null);
-  }
-
   function doAddVersion(fileId: string, label: string) {
     if (!label.trim()) return;
     const date = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" });
@@ -314,7 +404,6 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
       setExpandedFolders(prev => prev.filter(id => id !== f.id));
       return;
     }
-    // Lazy-load Drive contents
     if (f.driveId && !f.driveLoaded) {
       const res  = await fetch(`/api/drive/browse?folderId=${f.driveId}`);
       const data = await res.json();
@@ -332,9 +421,6 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
   }
 
   // ── Pin toggles ───────────────────────────────────────────────────────────
-
-  const togglePinFolder = (id: string) =>
-    setPinFolders(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
 
   const togglePinFile = (id: string) =>
     setPinFiles(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
@@ -386,22 +472,13 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
     });
 
     const folders: Folder[] = (data.subfolders ?? []).map(mapFolder);
-    // root-level files go in a synthetic folder
-    if ((data.files ?? []).length > 0) {
-      folders.unshift({
-        id: uid("f"), name: "Root Files",
-        files: (data.files ?? []).map((f: any) => ({
-          id: uid("fi"), name: f.name, ext: f.ext, versions: [], driveId: f.id,
-        })),
-        subfolders: [], driveId: undefined, driveLoaded: true,
-      });
-    }
+    const rootFiles: FileItem[] = (data.files ?? []).map((f: any) => ({
+      id: uid("fi"), name: f.name, ext: f.ext, versions: [], driveId: f.id,
+    }));
 
     const projId = uid("proj");
-    const topIds = folders.map(f => f.id);
-    setProjects(ps => [...ps, { id: projId, name: current.name, folders, driveRootId: current.id }]);
+    setProjects(ps => [...ps, { id: projId, name: current.name, folders, files: rootFiles, driveRootId: current.id }]);
     switchProject(projId);
-    setExpandedFolders(topIds); // after switchProject so it doesn't get cleared
     setPicker(null);
     setModalOpen(false);
   }
@@ -411,10 +488,88 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
   function createManualProject() {
     if (!manualName.trim()) return;
     const id = uid("proj");
-    setProjects(ps => [...ps, { id, name: manualName.trim(), folders: [] }]);
+    setProjects(ps => [...ps, { id, name: manualName.trim(), folders: [], files: [] }]);
     switchProject(id);
     setModalOpen(false);
     setManualName("");
+  }
+
+  // ── Create folder/file (modal) ────────────────────────────────────────────
+
+  async function doCreateFolder() {
+    if (!createName.trim()) return;
+    const folderId = uid("f");
+    const newFolder: Folder = { id: folderId, name: createName.trim(), files: [], subfolders: [] };
+
+    if (createFolderId) {
+      updateFolderInProject(createFolderId, f => ({ ...f, subfolders: [...f.subfolders, newFolder] }));
+    } else {
+      updateTopFolders(fs => [...fs, newFolder]);
+    }
+    setCreateModal(null);
+
+    const parentDriveId = createFolderId
+      ? allFolders.find(f => f.id === createFolderId)?.driveId
+      : activeProject?.driveRootId;
+    if (parentDriveId) {
+      const res  = await fetch("/api/drive/folder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newFolder.name, parentId: parentDriveId }),
+      });
+      const data = await res.json();
+      if (!data.error) {
+        if (createFolderId) {
+          updateFolderInProject(folderId, f => ({ ...f, driveId: data.id, driveLoaded: true }));
+        } else {
+          updateFolderInProject(folderId, f => ({ ...f, driveId: data.id, driveLoaded: true }));
+        }
+      }
+    }
+  }
+
+  async function doCreateFile() {
+    if (!createName.trim()) return;
+    const mimeMap: Record<string, { mimeType: string; ext: string }> = {
+      document:     { mimeType: "application/vnd.google-apps.document",     ext: "docx" },
+      presentation: { mimeType: "application/vnd.google-apps.presentation", ext: "pptx" },
+      spreadsheet:  { mimeType: "application/vnd.google-apps.spreadsheet",  ext: "xlsx" },
+    };
+    const { mimeType, ext } = mimeMap[createFileType];
+    const fileId = uid("fi");
+    const newFile: FileItem = { id: fileId, name: createName.trim(), ext, versions: [] };
+
+    if (createFolderId) {
+      updateFolderInProject(createFolderId, f => ({ ...f, files: [...f.files, newFile] }));
+    } else {
+      setProjects(ps => ps.map(p => p.id !== activeProjectId ? p : {
+        ...p, files: [...(p.files ?? []), newFile],
+      }));
+    }
+    setCreateModal(null);
+
+    const parentDriveId = createFolderId
+      ? allFolders.find(f => f.id === createFolderId)?.driveId
+      : activeProject?.driveRootId;
+    if (parentDriveId) {
+      const res  = await fetch("/api/drive/file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newFile.name, mimeType, parentId: parentDriveId }),
+      });
+      const data = await res.json();
+      if (!data.error) {
+        if (createFolderId) {
+          updateFolderInProject(createFolderId, f => ({
+            ...f, files: f.files.map(fi => fi.id === fileId ? { ...fi, driveId: data.id } : fi),
+          }));
+        } else {
+          setProjects(ps => ps.map(p => p.id !== activeProjectId ? p : {
+            ...p, files: (p.files ?? []).map(fi => fi.id === fileId ? { ...fi, driveId: data.id } : fi),
+          }));
+        }
+      }
+    }
   }
 
   // ── Node styles ───────────────────────────────────────────────────────────
@@ -434,8 +589,8 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
   };
 
   const fileCls = (id: string) => {
-    const active    = activeFileIds.includes(id);
-    const dragging  = dragFile?.fileId === id;
+    const active   = activeFileIds.includes(id);
+    const dragging = dragFile?.fileId === id;
     return `flex items-center gap-2 px-3 py-2 rounded-lg border select-none text-sm font-medium whitespace-nowrap transition-colors ${
       dragging
         ? "border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-700 text-zinc-400 opacity-50 cursor-grabbing"
@@ -463,7 +618,6 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
                 className="text-zinc-400 hover:text-zinc-600 text-lg leading-none">✕</button>
             </div>
 
-            {/* Tab switcher */}
             {isSignedIn && (
               <div className="flex gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
                 {(["manual", "drive"] as const).map(tab => (
@@ -479,7 +633,6 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
               </div>
             )}
 
-            {/* Manual tab */}
             {modalTab === "manual" && (
               <div className="flex flex-col gap-3">
                 <input
@@ -497,7 +650,6 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
               </div>
             )}
 
-            {/* Drive tab */}
             {modalTab === "drive" && (
               <div className="flex flex-col gap-3">
                 {!picker ? (
@@ -506,7 +658,6 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
                   <p className="text-xs text-red-500">{picker.error}</p>
                 ) : (
                   <>
-                    {/* Breadcrumb */}
                     <div className="flex items-center gap-1 text-[10px] text-zinc-400 flex-wrap">
                       {picker.path.map((p, i) => (
                         <span key={p.id} className="flex items-center gap-1">
@@ -519,7 +670,6 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
                       ))}
                     </div>
 
-                    {/* Folder list */}
                     <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
                       {picker.loading ? (
                         <p className="text-xs text-zinc-400 py-2 text-center">Loading…</p>
@@ -537,7 +687,6 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
                       )}
                     </div>
 
-                    {/* Select button */}
                     <button onClick={selectDriveFolder} disabled={pickerBusy}
                       className="py-2 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-500 disabled:opacity-60 transition-colors">
                       {pickerBusy ? "Loading…" : `Use "${picker.path[picker.path.length - 1].name}" as project`}
@@ -550,11 +699,81 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
         </div>
       )}
 
+      {/* ── Create folder/file modal ─────────────────────────────────────────── */}
+      {createModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-2xl w-80 p-5 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
+                {createModal === "folder" ? "New Folder" : "New File"}
+              </h2>
+              <button onClick={() => setCreateModal(null)}
+                className="text-zinc-400 hover:text-zinc-600 text-lg leading-none">✕</button>
+            </div>
+
+            <input
+              autoFocus
+              value={createName}
+              onChange={e => setCreateName(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") createModal === "folder" ? doCreateFolder() : doCreateFile(); }}
+              placeholder={createModal === "folder" ? "Folder name" : "File name"}
+              className="text-xs border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 outline-none focus:ring-1 focus:ring-green-500"
+            />
+
+            {createModal === "file" && (
+              <div className="flex gap-1.5">
+                {(["document", "presentation", "spreadsheet"] as const).map(type => (
+                  <button key={type} onClick={() => setCreateFileType(type)}
+                    className={`flex-1 text-[10px] px-2 py-1.5 rounded-full border font-medium transition-colors ${
+                      createFileType === type
+                        ? "bg-green-600 text-white border-green-600"
+                        : "border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:border-zinc-400"
+                    }`}>
+                    {type === "document" ? "📄 Document" : type === "presentation" ? "📊 Slide Deck" : "📈 Sheet"}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium">Location</p>
+              <div className="flex flex-col gap-1 max-h-36 overflow-y-auto">
+                <button
+                  onClick={() => setCreateFolderId(null)}
+                  className={`text-xs text-left px-3 py-2 rounded-lg border transition-colors ${
+                    createFolderId === null
+                      ? "border-green-400 bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-300"
+                      : "border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300"
+                  }`}>
+                  📂 Project Root
+                </button>
+                {[...allFolders].sort((a, b) => a.name.localeCompare(b.name)).map(f => (
+                  <button key={f.id} onClick={() => setCreateFolderId(f.id)}
+                    className={`text-xs text-left px-3 py-2 rounded-lg border transition-colors ${
+                      createFolderId === f.id
+                        ? "border-green-400 bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-300"
+                        : "border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300"
+                    }`}>
+                    📁 {f.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              onClick={() => createModal === "folder" ? doCreateFolder() : doCreateFile()}
+              disabled={!createName.trim()}
+              className="py-2 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-500 disabled:opacity-40 transition-colors">
+              {createModal === "folder" ? "Create Folder" : "Create File"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── File graph panel ────────────────────────────────────────────────── */}
       <div ref={containerRef}
         className="relative flex-1 min-h-0 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
 
-        {/* Empty state */}
         {noProjects && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
@@ -571,7 +790,6 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
           </div>
         )}
 
-        {/* Project bar */}
         {!noProjects && (
           <div className="absolute top-0 left-0 right-0 flex items-center gap-2 px-4 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/90 backdrop-blur z-10 overflow-x-auto">
             {projects.map(proj => (
@@ -592,175 +810,228 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
           </div>
         )}
 
-        {/* SVG connector overlay */}
         {!noProjects && (
           <svg className="absolute inset-0 w-full h-full pointer-events-none z-0" overflow="visible">
             {lines.map((l, i) => (
-              <path key={i} d={elbowD(l.x1, l.y1, l.x2, l.y2)} fill="none" stroke={l.color} strokeWidth={1.5} />
+              <path key={i} d={l.d} fill="none" stroke={l.color} strokeWidth={1.5} />
             ))}
           </svg>
         )}
 
-        {/* Columns */}
         {!noProjects && activeProject && (
-          <div className="relative z-10 flex items-start gap-10 h-full px-8 pt-14 pb-6 overflow-auto">
-
-            {/* ── Project node ────────────────────────────────────────────── */}
-            <div className="flex-shrink-0 flex items-center" style={{ alignSelf: "center" }}>
-              <div ref={productRef}
-                className="rounded-xl border-2 border-green-500 bg-green-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-green-500/20 whitespace-nowrap">
-                {activeProject.name}
-              </div>
+          <>
+            {/* ── + Folder / + File action buttons ──────────────────────────── */}
+            <div className="absolute top-12 left-4 z-20 flex gap-2">
+              <button
+                onClick={() => { setCreateModal("folder"); setCreateName(""); setCreateFolderId(null); }}
+                className="text-[11px] font-medium px-3 py-1 rounded-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-green-400 hover:text-green-600 transition-colors shadow-sm">
+                ＋ Folder
+              </button>
+              <button
+                onClick={() => { setCreateModal("file"); setCreateName(""); setCreateFolderId(null); setCreateFileType("document"); }}
+                className="text-[11px] font-medium px-3 py-1 rounded-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-blue-400 hover:text-blue-600 transition-colors shadow-sm">
+                ＋ File
+              </button>
             </div>
 
-            {/* ── Folder tree ─────────────────────────────────────────────── */}
-            <div className="flex-shrink-0 flex flex-col gap-1 self-center">
-              {allVisible.map(({ f, depth }) => (
-                <div key={f.id} className="flex flex-col gap-1" style={{ marginLeft: depth * 16 }}>
-                  <div className="flex items-center gap-1">
-                    {/* Expand/collapse toggle */}
-                    <button
-                      onClick={() => toggleExpand(f)}
-                      className="w-4 h-4 flex items-center justify-center text-zinc-400 hover:text-zinc-600 shrink-0 text-[10px]">
-                      {f.subfolders.length > 0 || (f.driveId && !f.driveLoaded)
-                        ? (expandedFolders.includes(f.id) ? "▾" : "▸")
-                        : " "}
-                    </button>
-                    <div
-                      ref={el => { folderRefs.current[f.id] = el; }}
-                      className={folderCls(f.id)}
-                      onMouseEnter={() => setHovFolder(f.id)}
-                      onMouseLeave={() => setHovFolder(null)}
-                      onClick={() => togglePinFolder(f.id)}
-                      onDragOver={e => { e.preventDefault(); setDragOverFolderId(f.id); }}
-                      onDragLeave={() => setDragOverFolderId(null)}
-                      onDrop={e => { e.preventDefault(); handleFileDrop(f); }}>
-                      <span>📁</span>
-                      <span>{f.name}</span>
-                      {dragOverFolderId === f.id && <span className="ml-auto text-[10px]">drop</span>}
-                      {pinFolders.includes(f.id) && dragOverFolderId !== f.id && <span className="ml-1 text-[10px] opacity-50">📌</span>}
-                    </div>
-                  </div>
-                  {activeFolderIds.includes(f.id) && (
-                    <div className="pl-5">
-                      {addFileTo === f.id
-                        ? <InlineForm placeholder="File name…" onConfirm={v => doAddFile(f.id, v)} onCancel={() => setAddFileTo(null)} />
-                        : <button className={BTN_ADD} onClick={() => setAddFileTo(f.id)}>+ file</button>
-                      }
-                    </div>
-                  )}
+            <div className="relative z-10 flex items-start gap-10 h-full px-8 pt-20 pb-6 overflow-auto">
+
+              {/* ── Project node ────────────────────────────────────────────── */}
+              <div className="flex-shrink-0 flex items-center" style={{ alignSelf: "center" }}>
+                <div ref={productRef}
+                  className="rounded-xl border-2 border-green-500 bg-green-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-green-500/20 whitespace-nowrap">
+                  {activeProject.name}
                 </div>
-              ))}
-
-              {/* + folder · collapse all */}
-              <div className="mt-1 pl-5 flex items-center gap-3">
-                {addFolder
-                  ? <InlineForm placeholder="Folder name…" onConfirm={doAddFolder} onCancel={() => setAddFolder(false)} />
-                  : <button className={BTN_ADD} onClick={() => setAddFolder(true)}>+ folder</button>
-                }
-                {expandedFolders.length > 0 && !addFolder && (
-                  <button
-                    className="text-[10px] text-zinc-400 hover:text-zinc-600 transition-colors"
-                    onClick={() => setExpandedFolders([])}>
-                    collapse all
-                  </button>
-                )}
               </div>
-            </div>
 
-            {/* ── Files ───────────────────────────────────────────────────── */}
-            {shownFiles.length > 0 && (
-              <div className="flex-shrink-0 flex flex-col gap-2 self-center">
-                {activeFolders.map(folder => {
-                  const allFiles   = folder.files;
-                  const isExpanded = expandedFileLists.includes(folder.id);
-                  const LIMIT      = 5;
-                  const shown      = allFiles.length > LIMIT && !isExpanded
-                    ? allFiles.slice(0, LIMIT)
-                    : allFiles;
-                  const hidden     = allFiles.length - LIMIT;
+              {/* ── Folder tree + synthetic root folder ──────────────────────── */}
+              <div className="flex-shrink-0 flex flex-col gap-1 self-center">
+                {allVisible.filter(item => item.kind === "folder").map(item => {
+                  if (item.kind !== "folder") return null;
+                  const { f, depth } = item;
+                  const isExp = expandedFolders.includes(f.id);
+                  const fOff  = nodeOffsets[f.id] ?? { dx: 0, dy: 0 };
                   return (
-                    <div key={folder.id} className="flex flex-col gap-1.5">
-                      {activeFolders.length > 1 && (
-                        <div className="text-[10px] uppercase tracking-widest text-zinc-400 px-1">{folder.name}</div>
-                      )}
-                      {shown.map(fi => (
-                        <div key={fi.id}
-                          ref={el => { fileRefs.current[fi.id] = el; }}
-                          className={fileCls(fi.id)}
-                          draggable
-                          onDragStart={() => setDragFile({ fileId: fi.id, fileDriveId: fi.driveId, srcFolderId: folder.id, srcFolderDriveId: folder.driveId })}
-                          onDragEnd={() => { setDragFile(null); setDragOverFolderId(null); }}
-                          onMouseEnter={() => setHovFile(fi.id)}
-                          onMouseLeave={() => setHovFile(null)}
-                          onClick={() => togglePinFile(fi.id)}>
-                          <span>{EXT_ICON[fi.ext] ?? "📄"}</span>
-                          <span>{fi.name}</span>
-                          {pinFiles.includes(fi.id) && <span className="ml-1 text-[10px] opacity-50">📌</span>}
-                        </div>
-                      ))}
-                      {allFiles.length > LIMIT && (
-                        <button
-                          className="text-[10px] text-zinc-400 hover:text-zinc-600 text-left px-1 transition-colors"
-                          onClick={() => toggleFileList(folder.id)}>
-                          {isExpanded ? "▴ show less" : `▾ ${hidden} more file${hidden !== 1 ? "s" : ""}`}
-                        </button>
-                      )}
+                    <div key={`folder-${f.id}`} className="flex items-center gap-1" style={{ marginLeft: depth * 16, transform: `translate(${fOff.dx}px,${fOff.dy}px)` }}>
+                      <button
+                        onClick={() => toggleExpand(f)}
+                        className="w-4 h-4 flex items-center justify-center text-zinc-400 hover:text-zinc-600 shrink-0 text-[10px]">
+                        {f.subfolders.length > 0 || f.files.length > 0 || (f.driveId && !f.driveLoaded)
+                          ? (isExp ? "▾" : "▸") : " "}
+                      </button>
+                      <div
+                        ref={el => { folderRefs.current[f.id] = el; }}
+                        className={folderCls(f.id)}
+                        onMouseDown={e => startShiftDrag(e, f.id)}
+                        onMouseEnter={() => setHovFolder(f.id)}
+                        onMouseLeave={() => setHovFolder(null)}
+                        onClick={e => {
+                          if (didShiftDrag()) return;
+                          if ((e.metaKey || e.ctrlKey) && f.driveId) {
+                            window.open(`https://drive.google.com/open?id=${f.driveId}`, "_blank");
+                          } else { toggleExpand(f); }
+                        }}
+                        onDragOver={e => { e.preventDefault(); setDragOverFolderId(f.id); }}
+                        onDragLeave={() => setDragOverFolderId(null)}
+                        onDrop={e => { e.preventDefault(); handleFileDrop(f); }}>
+                        <span>📁</span>
+                        <span>{f.name}</span>
+                        {dragOverFolderId === f.id && <span className="ml-auto text-[10px]">drop</span>}
+                      </div>
                     </div>
                   );
                 })}
-              </div>
-            )}
 
-            {/* ── Versions ────────────────────────────────────────────────── */}
-            {shownVersions.length > 0 && (
-              <div className="flex-shrink-0 flex flex-col gap-3 self-center">
-                {activeFilesData.map(fi => (
-                  <div key={fi.id} className="flex flex-col gap-1.5">
-                    {activeFilesData.length > 1 && (
-                      <div className="text-[10px] uppercase tracking-widest text-zinc-400 px-1">{fi.name}</div>
-                    )}
-                    {fi.versions.map((v, i) => (
-                      <div key={v.id} ref={el => { verRefs.current[v.id] = el; }}
-                        className={`px-3 py-2 rounded-lg border text-xs whitespace-nowrap ${
-                          i === 0
-                            ? "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40"
-                            : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800"
-                        }`}>
-                        <div className="flex items-start gap-2">
-                          <span className={`font-bold shrink-0 ${i === 0 ? "text-emerald-600" : "text-zinc-400"}`}>
-                            {v.id.split("-").pop()?.toUpperCase()}
-                          </span>
-                          <div className="flex-1 min-w-0">
-                            {editVer === v.id
-                              ? <InlineForm placeholder={v.label}
-                                  onConfirm={val => doEditVersion(v.id, val || v.label)}
-                                  onCancel={() => setEditVer(null)} />
-                              : <div className={`font-medium cursor-text ${i === 0 ? "text-emerald-700" : "text-zinc-600 dark:text-zinc-300"}`}
-                                  onClick={() => setEditVer(v.id)}>
-                                  {v.label}
-                                </div>
-                            }
-                            <div className="text-[10px] opacity-50 mt-0.5">{v.date} · {v.author}</div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    <div className="pl-1">
-                      {addVerTo === fi.id
-                        ? <InlineForm placeholder="Version note…" onConfirm={v => doAddVersion(fi.id, v)} onCancel={() => setAddVerTo(null)} />
-                        : <button className={BTN_ADD} onClick={() => setAddVerTo(fi.id)}>+ version</button>
-                      }
+                {/* Synthetic "Root-[project]" folder for root-level files */}
+                {hasRootFiles && rootSyntheticId && (
+                  <div className="flex items-center gap-1" style={{ transform: `translate(${(nodeOffsets[rootSyntheticId]?.dx ?? 0)}px,${(nodeOffsets[rootSyntheticId]?.dy ?? 0)}px)` }}>
+                    <button
+                      onClick={() => setExpandedFolders(prev => prev.includes(rootSyntheticId) ? prev.filter(x => x !== rootSyntheticId) : [...prev, rootSyntheticId])}
+                      className="w-4 h-4 flex items-center justify-center text-zinc-400 hover:text-zinc-600 shrink-0 text-[10px]">
+                      {rootFilesVisible ? "▾" : "▸"}
+                    </button>
+                    <div
+                      ref={el => { folderRefs.current[rootSyntheticId] = el; }}
+                      className={folderCls(rootSyntheticId)}
+                      onMouseDown={e => startShiftDrag(e, rootSyntheticId)}
+                      onMouseEnter={() => setHovFolder(rootSyntheticId)}
+                      onMouseLeave={() => setHovFolder(null)}
+                      onClick={() => {
+                        if (didShiftDrag()) return;
+                        setExpandedFolders(prev => prev.includes(rootSyntheticId) ? prev.filter(x => x !== rootSyntheticId) : [...prev, rootSyntheticId]);
+                      }}>
+                      <span>📂</span>
+                      <span>Root-{activeProject.name}</span>
                     </div>
                   </div>
-                ))}
+                )}
               </div>
+
+              {/* ── Files column ─────────────────────────────────────────────── */}
+              {allVisible.some(item => item.kind === "file" || item.kind === "more") && (
+                <div className="flex-shrink-0 flex flex-col gap-1 self-center">
+                  {allVisible.filter(item => item.kind === "file" || item.kind === "more").map((item, idx) => {
+                    if (item.kind === "file") {
+                      const { fi, parentFolderId, parentFolderDriveId } = item;
+                      const isRootFile = parentFolderId === rootSyntheticId;
+                      const fiOff = nodeOffsets[fi.id] ?? { dx: 0, dy: 0 };
+                      return (
+                        <div key={`file-${fi.id}-${idx}`} style={{ transform: `translate(${fiOff.dx}px,${fiOff.dy}px)` }}>
+                          <div
+                            ref={el => { fileRefs.current[fi.id] = el; }}
+                            className={fileCls(fi.id)}
+                            draggable={!isRootFile}
+                            onDragStart={!isRootFile && parentFolderId ? (e) => {
+                              if (e.shiftKey) { e.preventDefault(); return; }
+                              setDragFile({ fileId: fi.id, fileDriveId: fi.driveId, srcFolderId: parentFolderId, srcFolderDriveId: parentFolderDriveId });
+                            } : undefined}
+                            onMouseDown={e => startShiftDrag(e, fi.id)}
+                            onDragEnd={() => { setDragFile(null); setDragOverFolderId(null); }}
+                            onMouseEnter={() => setHovFile(fi.id)}
+                            onMouseLeave={() => setHovFile(null)}
+                            onClick={e => {
+                              if (didShiftDrag()) return;
+                              if ((e.metaKey || e.ctrlKey) && fi.driveId) {
+                                window.open(`https://drive.google.com/open?id=${fi.driveId}`, "_blank");
+                              } else {
+                                togglePinFile(fi.id);
+                              }
+                            }}>
+                            <span>{EXT_ICON[fi.ext] ?? "📄"}</span>
+                            <span>{fi.name}</span>
+                            {pinFiles.includes(fi.id) && <span className="ml-1 text-[10px] opacity-50">📌</span>}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (item.kind === "more") {
+                      const { folderId, count } = item;
+                      return (
+                        <div key={`more-${folderId}`}>
+                          <button
+                            className="text-[10px] text-zinc-400 hover:text-zinc-600 text-left px-1 transition-colors"
+                            onClick={() => toggleFileList(folderId)}>
+                            ▾ {count} more file{count !== 1 ? "s" : ""}
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })}
+                </div>
+              )}
+
+              {/* ── Versions ────────────────────────────────────────────────── */}
+              {shownVersions.length > 0 && (
+                <div className="flex-shrink-0 flex flex-col gap-3 self-center">
+                  {activeFilesData.map(fi => (
+                    <div key={fi.id} className="flex flex-col gap-1.5">
+                      {activeFilesData.length > 1 && (
+                        <div className="text-[10px] uppercase tracking-widest text-zinc-400 px-1">{fi.name}</div>
+                      )}
+                      {fi.versions.map((v, i) => (
+                        <div key={v.id} ref={el => { verRefs.current[v.id] = el; }}
+                          className={`px-3 py-2 rounded-lg border text-xs whitespace-nowrap ${
+                            i === 0
+                              ? "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40"
+                              : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800"
+                          }`}>
+                          <div className="flex items-start gap-2">
+                            <span className={`font-bold shrink-0 ${i === 0 ? "text-emerald-600" : "text-zinc-400"}`}>
+                              {v.id.split("-").pop()?.toUpperCase()}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              {editVer === v.id
+                                ? <InlineForm placeholder={v.label}
+                                    onConfirm={val => doEditVersion(v.id, val || v.label)}
+                                    onCancel={() => setEditVer(null)} />
+                                : <div className={`font-medium cursor-text ${i === 0 ? "text-emerald-700" : "text-zinc-600 dark:text-zinc-300"}`}
+                                    onClick={() => setEditVer(v.id)}>
+                                    {v.label}
+                                  </div>
+                              }
+                              <div className="text-[10px] opacity-50 mt-0.5">{v.date} · {v.author}</div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <div className="pl-1">
+                        {addVerTo === fi.id
+                          ? <InlineForm placeholder="Version note…" onConfirm={v => doAddVersion(fi.id, v)} onCancel={() => setAddVerTo(null)} />
+                          : <button className={BTN_ADD} onClick={() => setAddVerTo(fi.id)}>+ version</button>
+                        }
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {!noProjects && (pinFiles.length > 0 || Object.keys(nodeOffsets).length > 0) && (
+          <div className="absolute top-12 right-4 z-10 flex gap-2">
+            {pinFiles.length > 0 && (
+              <button
+                onClick={() => { setPinFiles([]); setHovFile(null); }}
+                className="text-[10px] px-2 py-1 rounded-md bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-zinc-700 hover:border-zinc-400 transition-colors shadow-sm select-none">
+                collapse files ✕
+              </button>
+            )}
+            {Object.keys(nodeOffsets).length > 0 && (
+              <button
+                onClick={() => setNodeOffsets({})}
+                className="text-[10px] px-2 py-1 rounded-md bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-zinc-700 hover:border-zinc-400 transition-colors shadow-sm select-none">
+                Reset ↺
+              </button>
             )}
           </div>
         )}
 
         <div className="absolute bottom-3 right-4 text-[10px] text-zinc-400 select-none z-10">
-          hover to expand · click to pin 📌 · drag file to move · ▸ to expand folders
+          click to pin 📌 · ⌘-click to open in Drive · drag to move · ⇧-drag to reposition · ▸ expand
         </div>
       </div>
     </>
