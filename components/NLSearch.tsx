@@ -63,7 +63,31 @@ export default function NLSearch({ signedIn = false }: { signedIn?: boolean }) {
   const [searchState, setSearchState] = useState<SearchState>({ status: "idle" });
   const cacheRef = useRef<DriveCache | null>(null);
 
-  // On mount: load or build the cache
+  function runFullIndex() {
+    setIndexState({ status: "indexing" });
+    setSearchState({ status: "idle" });
+    cacheRef.current = null;
+
+    fetch("/api/drive/summarize", { method: "POST" })
+      .then((r) => r.json())
+      .then((data: { files?: CachedFile[]; syncedAt?: string; latestModifiedTime?: string }) => {
+        if (!data.files) throw new Error("No files returned");
+        const cache: DriveCache = {
+          files:              data.files,
+          syncedAt:           data.syncedAt ?? new Date().toISOString(),
+          latestModifiedTime: data.latestModifiedTime ?? new Date().toISOString(),
+        };
+        writeCache(cache);
+        cacheRef.current = cache;
+        setIndexState({ status: "ready", fileCount: cache.files.length });
+      })
+      .catch((err) => {
+        console.error("Indexing failed:", err);
+        setIndexState({ status: "error", message: "Failed to index your Drive. Try refreshing." });
+      });
+  }
+
+  // On mount: load cache or run first-time index
   useEffect(() => {
     if (!signedIn) return;
 
@@ -73,7 +97,6 @@ export default function NLSearch({ signedIn = false }: { signedIn?: boolean }) {
       cacheRef.current = cached;
       setIndexState({ status: "syncing" });
 
-      // Background sync: check for files newer than our latest known modifiedTime
       fetch(`/api/drive/sync?since=${encodeURIComponent(cached.latestModifiedTime)}`)
         .then((r) => r.json())
         .then((data: { newFiles?: CachedFile[] }) => {
@@ -85,31 +108,12 @@ export default function NLSearch({ signedIn = false }: { signedIn?: boolean }) {
           setIndexState({ status: "ready", fileCount: cacheRef.current!.files.length });
         })
         .catch(() => {
-          // Sync failed — still usable with stale cache
           setIndexState({ status: "ready", fileCount: cached.files.length });
         });
     } else {
-      // First time: full index
-      setIndexState({ status: "indexing" });
-
-      fetch("/api/drive/summarize", { method: "POST" })
-        .then((r) => r.json())
-        .then((data: { files?: CachedFile[]; syncedAt?: string; latestModifiedTime?: string }) => {
-          if (!data.files) throw new Error("No files returned");
-          const cache: DriveCache = {
-            files:              data.files,
-            syncedAt:           data.syncedAt ?? new Date().toISOString(),
-            latestModifiedTime: data.latestModifiedTime ?? new Date().toISOString(),
-          };
-          writeCache(cache);
-          cacheRef.current = cache;
-          setIndexState({ status: "ready", fileCount: cache.files.length });
-        })
-        .catch((err) => {
-          console.error("Indexing failed:", err);
-          setIndexState({ status: "error", message: "Failed to index your Drive. Try refreshing." });
-        });
+      runFullIndex();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signedIn]);
 
   async function handleSearch(q = query) {
@@ -153,7 +157,7 @@ export default function NLSearch({ signedIn = false }: { signedIn?: boolean }) {
         <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">
           Natural Language Search
         </span>
-        <IndexBadge state={indexState} signedIn={signedIn} />
+        <IndexBadge state={indexState} signedIn={signedIn} onReindex={runFullIndex} />
       </div>
 
       {/* Search bar */}
@@ -276,7 +280,15 @@ export default function NLSearch({ signedIn = false }: { signedIn?: boolean }) {
   );
 }
 
-function IndexBadge({ state, signedIn }: { state: IndexState; signedIn: boolean }) {
+function IndexBadge({
+  state,
+  signedIn,
+  onReindex,
+}: {
+  state: IndexState;
+  signedIn: boolean;
+  onReindex: () => void;
+}) {
   if (!signedIn) return null;
 
   if (state.status === "indexing") {
@@ -295,13 +307,29 @@ function IndexBadge({ state, signedIn }: { state: IndexState; signedIn: boolean 
   }
   if (state.status === "ready") {
     return (
-      <span className="text-[10px] text-zinc-400">
+      <span className="flex items-center gap-2 text-[10px] text-zinc-400">
         {state.fileCount} files indexed
+        <button
+          onClick={onReindex}
+          className="underline hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+        >
+          Re-index
+        </button>
       </span>
     );
   }
   if (state.status === "error") {
-    return <span className="text-[10px] text-red-500">{state.message}</span>;
+    return (
+      <span className="flex items-center gap-2 text-[10px] text-red-500">
+        {state.message}
+        <button
+          onClick={onReindex}
+          className="underline hover:text-red-700 transition-colors"
+        >
+          Retry
+        </button>
+      </span>
+    );
   }
   return null;
 }
