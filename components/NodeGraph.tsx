@@ -789,26 +789,28 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
                 className="text-zinc-400 hover:text-zinc-600 text-lg leading-none">✕</button>
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium">
-                What is it for? <span className="normal-case">(optional — used to suggest a name)</span>
-              </label>
-              <div className="flex gap-1.5">
-                <input
-                  value={createPurpose}
-                  onChange={e => setCreatePurpose(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter" && createPurpose.trim()) suggestName(); }}
-                  placeholder="e.g. quarterly budget tracking"
-                  className="flex-1 text-xs border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 outline-none focus:ring-1 focus:ring-green-500"
-                />
-                <button
-                  onClick={suggestName}
-                  disabled={!createPurpose.trim() || suggestingName}
-                  className="shrink-0 text-[10px] px-2.5 py-1.5 rounded-lg bg-green-50 dark:bg-green-950/40 border border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 font-medium hover:bg-green-100 disabled:opacity-40 transition-colors">
-                  {suggestingName ? "…" : "✨ Suggest"}
-                </button>
+            {isSignedIn && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium">
+                  What is it for? <span className="normal-case">(optional — used to suggest a name)</span>
+                </label>
+                <div className="flex gap-1.5">
+                  <input
+                    value={createPurpose}
+                    onChange={e => setCreatePurpose(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && createPurpose.trim()) suggestName(); }}
+                    placeholder="e.g. quarterly budget tracking"
+                    className="flex-1 text-xs border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 outline-none focus:ring-1 focus:ring-green-500"
+                  />
+                  <button
+                    onClick={suggestName}
+                    disabled={!createPurpose.trim() || suggestingName}
+                    className="shrink-0 text-[10px] px-2.5 py-1.5 rounded-lg bg-green-50 dark:bg-green-950/40 border border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 font-medium hover:bg-green-100 disabled:opacity-40 transition-colors">
+                    {suggestingName ? "…" : "✨ Suggest"}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             <input
               autoFocus
