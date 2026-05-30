@@ -5,10 +5,6 @@ import { createRequire } from "module";
 import { exportGoogleDoc } from "@/lib/google/drive";
 import type { DriveFile } from "@/lib/google/types";
 
-const require = createRequire(import.meta.url);
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
-
 // Google Workspace formats — export via Drive API
 const EXPORT_AS_TEXT: Record<string, string> = {
   "application/vnd.google-apps.document":     "text/plain",
@@ -66,6 +62,9 @@ async function extractDocx(buf: Buffer): Promise<string | null> {
 
 async function extractPdf(buf: Buffer): Promise<string | null> {
   try {
+    const _require = createRequire(import.meta.url);
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pdfParse = _require("pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
     const { text } = await pdfParse(buf);
     return text.replace(/\s+/g, " ").trim() || null;
   } catch {
