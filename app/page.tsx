@@ -24,7 +24,7 @@ export default async function ContextOSPage() {
       </header>
 
       <div className="px-6 pt-4">
-        <DuplicateAlert />
+        <DuplicateAlert signedIn={signedIn} />
       </div>
 
       <main className="flex flex-1 p-6 min-h-0" style={{ minHeight: 440 }}>

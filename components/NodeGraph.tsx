@@ -15,7 +15,7 @@ interface Project  { id: string; name: string; folders: Folder[]; files?: FileIt
 interface DriveItem { id: string; name: string }
 
 type TreeItem =
-  | { kind: "folder"; f: Folder; depth: number }
+  | { kind: "folder"; f: Folder; parentFolderId: string | null; depth: number }
   | { kind: "file"; fi: FileItem; parentFolderId: string | null; parentFolderDriveId?: string; depth: number }
   | { kind: "more"; folderId: string; count: number; depth: number }
 
@@ -27,13 +27,13 @@ const EXT_ICON: Record<string, string> = {
 
 interface Line { d: string; color: string }
 
-function elbowD(x1: number, y1: number, x2: number, y2: number, R = 8): string {
+function elbowD(x1: number, y1: number, x2: number, y2: number, R = 8, mx?: number): string {
   if (Math.abs(y1 - y2) < 1) return `M ${x1} ${y1} H ${x2}`;
-  const mx = (x1 + x2) / 2;
-  const s  = y2 > y1 ? 1 : -1;
-  const r  = Math.min(R, Math.abs(y2 - y1) / 2, Math.abs(x2 - x1) / 4);
-  return [`M ${x1} ${y1}`, `H ${mx - r}`, `Q ${mx} ${y1} ${mx} ${y1 + s * r}`,
-          `V ${y2 - s * r}`, `Q ${mx} ${y2} ${mx + r} ${y2}`, `H ${x2}`].join(" ");
+  const midx = mx ?? (x1 + x2) / 2;
+  const s    = y2 > y1 ? 1 : -1;
+  const r    = Math.min(R, Math.abs(y2 - y1) / 2, Math.abs(midx - x1) / 2, Math.abs(x2 - midx) / 2);
+  return [`M ${x1} ${y1}`, `H ${midx - r}`, `Q ${midx} ${y1} ${midx} ${y1 + s * r}`,
+          `V ${y2 - s * r}`, `Q ${midx} ${y2} ${midx + r} ${y2}`, `H ${x2}`].join(" ");
 }
 
 // ── UID ───────────────────────────────────────────────────────────────────────
@@ -79,6 +79,7 @@ function visibleTreeFull(
   expanded: string[],
   expandedFiles: string[],
   depth = 0,
+  parentFolderId: string | null = null,
 ): TreeItem[] {
   const LIMIT = 5;
   const sorted = [...folders].sort((a, b) => a.name.localeCompare(b.name));
@@ -89,9 +90,9 @@ function visibleTreeFull(
     const shownF      = filesExp ? sortedFiles : sortedFiles.slice(0, LIMIT);
     const hasMore     = !filesExp && sortedFiles.length > LIMIT;
     return [
-      { kind: "folder" as const, f, depth },
+      { kind: "folder" as const, f, parentFolderId, depth },
       ...(isExpanded ? [
-        ...visibleTreeFull(f.subfolders, expanded, expandedFiles, depth + 1),
+        ...visibleTreeFull(f.subfolders, expanded, expandedFiles, depth + 1, f.id),
         ...shownF.map(fi => ({ kind: "file" as const, fi, parentFolderId: f.id, parentFolderDriveId: f.driveId, depth: depth + 1 })),
         ...(hasMore ? [{ kind: "more" as const, folderId: f.id, count: sortedFiles.length - LIMIT, depth: depth + 1 }] : []),
       ] : []),
@@ -149,6 +150,8 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
   const [createName,     setCreateName]     = useState("");
   const [createFileType, setCreateFileType] = useState<"document" | "presentation" | "spreadsheet">("document");
   const [createFolderId, setCreateFolderId] = useState<string | null>(null);
+  const [createPurpose,  setCreatePurpose]  = useState("");
+  const [suggestingName, setSuggestingName] = useState(false);
 
   // ── Interaction state ────────────────────────────────────────────────────
   const [expandedFolders,   setExpandedFolders]   = useState<string[]>([]);
@@ -255,16 +258,42 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
         midY: r.top - cr.top + r.height / 2,
       };
     };
+
+    // Collect node bounding boxes for obstacle-aware routing
+    type Rect = { left: number; right: number; top: number; bot: number };
+    const obstacles: Rect[] = [];
+    const addObs = (el: HTMLElement | null) => {
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      obstacles.push({
+        left: r.left - cr.left - 2, right: r.right - cr.left + 2,
+        top: r.top - cr.top - 2, bot: r.bottom - cr.top + 2,
+      });
+    };
+    Object.values(folderRefs.current).forEach(el => addObs(el));
+    Object.values(fileRefs.current).forEach(el => addObs(el));
+    addObs(productRef.current);
+
     const pb = pos(p);
     const next: Line[] = [];
 
-    // ── Rectangular elbow with rounded corners, fanned from source height ────
     type NodePos = { left: number; right: number; top: number; bot: number; midY: number };
-    function addFanned(
-      src: NodePos,
-      targets: Array<{left: number; midY: number}>,
-      color: string,
-    ) {
+
+    function pushSafe(x1: number, y1: number, x2: number, y2: number, color: string) {
+      const baseMx = (x1 + x2) / 2;
+      const yMin = Math.min(y1, y2);
+      const yMax = Math.max(y1, y2);
+      for (const off of [0, 16, -16, 32, -32, 48, -48]) {
+        const mx = baseMx + off;
+        const blocked = obstacles.some(ob =>
+          mx > ob.left && mx < ob.right && yMin < ob.bot && yMax > ob.top
+        );
+        if (!blocked) { next.push({ d: elbowD(x1, y1, x2, y2, 10, mx), color }); return; }
+      }
+      next.push({ d: elbowD(x1, y1, x2, y2, 10), color });
+    }
+
+    function addFanned(src: NodePos, targets: Array<{left: number; midY: number}>, color: string) {
       if (targets.length === 0) return;
       const sorted = [...targets].sort((a, b) => a.midY - b.midY);
       const pad = 5;
@@ -272,7 +301,7 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
       sorted.forEach((t, i) => {
         const frac   = sorted.length === 1 ? 0.5 : i / (sorted.length - 1);
         const startY = src.top + pad + frac * h;
-        next.push({ d: elbowD(src.right, startY, t.left, t.midY, 10), color });
+        pushSafe(src.right, startY, t.left, t.midY, color);
       });
     }
 
@@ -288,6 +317,29 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
       if (el) { const p2 = pos(el); projectChildren.push({ left: p2.left, midY: p2.midY }); }
     }
     addFanned(pb, projectChildren, "#a1a1aa");
+
+    // parent folder → subfolders (tree-style L-connector from left side)
+    const subfoldersByParent = new Map<string, Array<{left: number; midY: number}>>();
+    allVisible.filter(item => item.kind === "folder" && item.parentFolderId !== null).forEach(item => {
+      if (item.kind !== "folder" || !item.parentFolderId) return;
+      const el = folderRefs.current[item.f.id]; if (!el) return;
+      const p2 = pos(el);
+      const pid = item.parentFolderId;
+      if (!subfoldersByParent.has(pid)) subfoldersByParent.set(pid, []);
+      subfoldersByParent.get(pid)!.push({ left: p2.left, midY: p2.midY });
+    });
+    subfoldersByParent.forEach((children, parentId) => {
+      const parentEl = folderRefs.current[parentId]; if (!parentEl) return;
+      const pp = pos(parentEl);
+      const x = pp.left - 10;
+      children.sort((a, b) => a.midY - b.midY).forEach(child => {
+        const r = 5;
+        const dy = child.midY - pp.midY;
+        const safe_r = Math.min(r, Math.abs(dy) / 2, Math.abs(child.left - x) / 2);
+        const d = `M ${x} ${pp.midY} V ${child.midY - safe_r} Q ${x} ${child.midY} ${x + safe_r} ${child.midY} H ${child.left}`;
+        next.push({ d, color: "#a1a1aa" });
+      });
+    });
 
     // folder → its files (grouped per folder, fanned; includes synthetic root)
     const filesByFolder = new Map<string, Array<{left: number; midY: number}>>();
@@ -483,6 +535,30 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
     setModalOpen(false);
   }
 
+  // ── AI name suggestion ────────────────────────────────────────────────────
+
+  async function suggestName() {
+    if (!createPurpose.trim() || suggestingName) return;
+    setSuggestingName(true);
+    const existingNames = [
+      ...allFolders.map(f => f.name),
+      ...allProjectFiles.map(fi => fi.name),
+    ];
+    const res = await fetch("/api/suggest-name", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: createModal,
+        fileType: createModal === "file" ? createFileType : undefined,
+        purpose: createPurpose,
+        existingNames,
+      }),
+    });
+    const data = await res.json();
+    if (data.suggestion) setCreateName(data.suggestion);
+    setSuggestingName(false);
+  }
+
   // ── Create project ────────────────────────────────────────────────────────
 
   function createManualProject() {
@@ -507,6 +583,7 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
       updateTopFolders(fs => [...fs, newFolder]);
     }
     setCreateModal(null);
+    setCreatePurpose("");
 
     const parentDriveId = createFolderId
       ? allFolders.find(f => f.id === createFolderId)?.driveId
@@ -547,6 +624,7 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
       }));
     }
     setCreateModal(null);
+    setCreatePurpose("");
 
     const parentDriveId = createFolderId
       ? allFolders.find(f => f.id === createFolderId)?.driveId
@@ -707,8 +785,29 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
               <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
                 {createModal === "folder" ? "New Folder" : "New File"}
               </h2>
-              <button onClick={() => setCreateModal(null)}
+              <button onClick={() => { setCreateModal(null); setCreatePurpose(""); setSuggestingName(false); }}
                 className="text-zinc-400 hover:text-zinc-600 text-lg leading-none">✕</button>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[10px] uppercase tracking-wider text-zinc-400 font-medium">
+                What is it for? <span className="normal-case">(optional — used to suggest a name)</span>
+              </label>
+              <div className="flex gap-1.5">
+                <input
+                  value={createPurpose}
+                  onChange={e => setCreatePurpose(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && createPurpose.trim()) suggestName(); }}
+                  placeholder="e.g. quarterly budget tracking"
+                  className="flex-1 text-xs border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 outline-none focus:ring-1 focus:ring-green-500"
+                />
+                <button
+                  onClick={suggestName}
+                  disabled={!createPurpose.trim() || suggestingName}
+                  className="shrink-0 text-[10px] px-2.5 py-1.5 rounded-lg bg-green-50 dark:bg-green-950/40 border border-green-300 dark:border-green-700 text-green-700 dark:text-green-400 font-medium hover:bg-green-100 disabled:opacity-40 transition-colors">
+                  {suggestingName ? "…" : "✨ Suggest"}
+                </button>
+              </div>
             </div>
 
             <input
