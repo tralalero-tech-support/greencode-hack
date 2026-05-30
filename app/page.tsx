@@ -47,7 +47,7 @@ export default async function ContextOSPage() {
         </aside>
 
         <div className="flex flex-col flex-1 min-h-0 gap-4" style={{ minHeight: 440 }}>
-          <FileGraph />
+          <FileGraph isSignedIn={signedIn} />
         </div>
       </main>
 
