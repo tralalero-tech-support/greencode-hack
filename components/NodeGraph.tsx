@@ -1,107 +1,97 @@
 "use client";
 
-type FileNode = {
-  id: string;
-  label: string;
-  type: "main" | "draft" | "branch" | "support" | "collaborator";
-  x: number;
-  y: number;
-};
+// Left-to-right tree with rounded elbow connectors.
+// ViewBox exactly wraps all content so SVG always fits the container.
 
-const nodes: FileNode[] = [
-  { id: "main",    label: "Final Presentation",      type: "main",         x: 210, y: 120 },
-  { id: "d1",      label: "Slide Deck v1",            type: "draft",        x: 80,  y: 230 },
-  { id: "d2",      label: "Slide Deck v2",            type: "draft",        x: 200, y: 250 },
-  { id: "b1",      label: "Food Security Branch",     type: "branch",       x: 50,  y: 340 },
-  { id: "b2",      label: "Blue Economy Branch",      type: "branch",       x: 180, y: 355 },
-  { id: "s1",      label: "Survey Questions",         type: "support",      x: 340, y: 240 },
-  { id: "s2",      label: "Final Paper",              type: "support",      x: 355, y: 330 },
-  { id: "c1",      label: "Isha",                     type: "collaborator", x: 310, y: 110 },
-  { id: "c2",      label: "Asmita",                   type: "collaborator", x: 370, y: 160 },
+const STYLES = {
+  main:    { fill: "#16a34a", stroke: "#15803d", text: "#ffffff" },
+  draft:   { fill: "#f0fdf4", stroke: "#86efac", text: "#166534" },
+  branch:  { fill: "#eff6ff", stroke: "#93c5fd", text: "#1e40af" },
+  support: { fill: "#fefce8", stroke: "#fde047", text: "#854d0e" },
+} as const;
+type NT = keyof typeof STYLES;
+
+const NH = 36, NHM = 44, RX = 7, R = 8; // R = elbow corner radius
+
+const nodes: { id: string; label: string; type: NT; cx: number; cy: number; w: number; h: number }[] = [
+  { id: "main", label: "Final Presentation",  type: "main",    cx: 85,  cy: 175, w: 152, h: NHM },
+  { id: "sv1",  label: "Slide Deck v1",       type: "draft",   cx: 275, cy: 90,  w: 118, h: NH  },
+  { id: "sv2",  label: "Slide Deck v2",       type: "draft",   cx: 275, cy: 175, w: 118, h: NH  },
+  { id: "sq",   label: "Survey Questions",    type: "support", cx: 275, cy: 262, w: 128, h: NH  },
+  { id: "fs",   label: "Food Security Br.",   type: "branch",  cx: 430, cy: 60,  w: 120, h: NH  },
+  { id: "be",   label: "Blue Economy Br.",    type: "branch",  cx: 430, cy: 120, w: 120, h: NH  },
+  { id: "fp",   label: "Final Paper",         type: "support", cx: 430, cy: 262, w: 100, h: NH  },
 ];
 
-const edges: [string, string][] = [
-  ["main", "d1"],
-  ["main", "d2"],
-  ["main", "s1"],
-  ["main", "c1"],
-  ["main", "c2"],
-  ["d1",   "b1"],
-  ["d2",   "b2"],
-  ["s1",   "s2"],
-];
+// Bus x-coordinates for orthogonal routing
+const B1 = 188; // between main-right (161) and sv1-left (216)
+const B2 = 352; // between sv1-right (334) and fs-left (370)
 
-const typeStyles: Record<FileNode["type"], { fill: string; stroke: string; textFill: string }> = {
-  main:         { fill: "#16a34a", stroke: "#15803d", textFill: "#fff"     },
-  draft:        { fill: "#f0fdf4", stroke: "#86efac", textFill: "#166534"  },
-  branch:       { fill: "#eff6ff", stroke: "#93c5fd", textFill: "#1e40af"  },
-  support:      { fill: "#fefce8", stroke: "#fde047", textFill: "#854d0e"  },
-  collaborator: { fill: "#faf5ff", stroke: "#d8b4fe", textFill: "#6b21a8"  },
-};
-
-function getNode(id: string) {
-  return nodes.find((n) => n.id === id)!;
+// Rounded elbow path: parent exits right at (px, py), child enters left at (cx, cy).
+// Uses quadratic bezier at both corners with radius R.
+function elbowPath(px: number, py: number, cx: number, cy: number, bx: number): string {
+  if (py === cy) return `M ${px} ${py} H ${cx}`; // straight line, no corners
+  const up = cy < py;
+  const s = up ? -1 : 1;
+  return [
+    `M ${px} ${py}`,
+    `H ${bx - R}`,
+    `Q ${bx} ${py} ${bx} ${py + s * R}`, // first corner: right → up/down
+    `V ${cy - s * R}`,
+    `Q ${bx} ${cy} ${bx + R} ${cy}`,      // second corner: up/down → right
+    `H ${cx}`,
+  ].join(" ");
 }
+
+const edges = [
+  elbowPath(161, 175, 216, 90,  B1),  // main → sv1
+  elbowPath(161, 175, 216, 175, B1),  // main → sv2 (straight)
+  elbowPath(161, 175, 211, 262, B1),  // main → sq
+  elbowPath(334, 90,  370, 60,  B2),  // sv1  → fs
+  elbowPath(334, 90,  370, 120, B2),  // sv1  → be
+  elbowPath(339, 262, 380, 262, B2),  // sq   → fp (straight)
+];
 
 export default function FileGraph() {
   return (
     <div className="relative flex-1 min-h-0 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
-      <div className="absolute top-3 left-4 text-xs font-semibold text-zinc-400 uppercase tracking-wide">
+      <div className="absolute top-3 left-4 text-xs font-semibold text-zinc-400 uppercase tracking-wide z-10">
         File Graph
       </div>
 
-      <svg width="100%" height="100%" viewBox="0 0 440 400" className="block">
-        <defs>
-          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
-            markerWidth="6" markerHeight="6" orient="auto">
-            <path d="M0,0 L10,5 L0,10 z" fill="#d1d5db" />
-          </marker>
-        </defs>
+      {/* preserveAspectRatio="xMidYMid meet" ensures the whole tree is always visible */}
+      <svg
+        width="100%"
+        height="100%"
+        viewBox="0 0 510 330"
+        preserveAspectRatio="xMidYMid meet"
+        className="block"
+      >
+        {/* Connector paths */}
+        {edges.map((d, i) => (
+          <path key={i} d={d} fill="none" stroke="#a1a1aa" strokeWidth={1.5} />
+        ))}
 
-        {edges.map(([from, to]) => {
-          const a = getNode(from);
-          const b = getNode(to);
-          const mx = (a.x + b.x) / 2;
-          const my = (a.y + b.y) / 2 - 20;
+        {/* Nodes */}
+        {nodes.map((n) => {
+          const s = STYLES[n.type];
           return (
-            <path
-              key={`${from}-${to}`}
-              d={`M ${a.x} ${a.y} Q ${mx} ${my} ${b.x} ${b.y}`}
-              fill="none"
-              stroke="#d1d5db"
-              strokeWidth={1.5}
-              markerEnd="url(#arrow)"
-            />
-          );
-        })}
-
-        {nodes.map((node) => {
-          const s = typeStyles[node.type];
-          const isMain = node.type === "main";
-          const w = isMain ? 130 : 108;
-          const h = isMain ? 36 : 28;
-          const r = isMain ? 10 : 8;
-          return (
-            <g key={node.id} className="cursor-pointer">
+            <g key={n.id} className="cursor-pointer">
               <rect
-                x={node.x - w / 2}
-                y={node.y - h / 2}
-                width={w}
-                height={h}
-                rx={r}
-                fill={s.fill}
-                stroke={s.stroke}
-                strokeWidth={isMain ? 2 : 1.5}
+                x={n.cx - n.w / 2} y={n.cy - n.h / 2}
+                width={n.w} height={n.h} rx={RX}
+                fill={s.fill} stroke={s.stroke}
+                strokeWidth={n.type === "main" ? 2 : 1.5}
               />
               <text
-                x={node.x}
-                y={node.y + 5}
+                x={n.cx} y={n.cy + 4}
                 textAnchor="middle"
-                fontSize={isMain ? 11 : 9}
-                fontWeight={isMain ? 700 : 500}
-                fill={s.textFill}
+                fontSize={n.type === "main" ? 11 : 9.5}
+                fontWeight={n.type === "main" ? 700 : 500}
+                fill={s.text}
+                fontFamily="system-ui,-apple-system,sans-serif"
               >
-                {node.label}
+                {n.label}
               </text>
             </g>
           );
@@ -109,13 +99,11 @@ export default function FileGraph() {
       </svg>
 
       {/* Legend */}
-      <div className="absolute bottom-3 right-4 flex flex-col gap-1">
-        {(["main", "draft", "branch", "support", "collaborator"] as FileNode["type"][]).map((t) => (
+      <div className="absolute bottom-3 right-4 flex flex-col gap-1.5">
+        {(Object.entries(STYLES) as [NT, (typeof STYLES)[NT]][]).map(([t, s]) => (
           <div key={t} className="flex items-center gap-1.5">
-            <span
-              className="inline-block w-2.5 h-2.5 rounded-sm"
-              style={{ background: typeStyles[t].fill, border: `1px solid ${typeStyles[t].stroke}` }}
-            />
+            <span className="inline-block w-3 h-2.5 rounded-sm"
+              style={{ background: s.fill, border: `1.5px solid ${s.stroke}` }} />
             <span className="text-[10px] text-zinc-400 capitalize">{t}</span>
           </div>
         ))}
