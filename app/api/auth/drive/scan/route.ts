@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
 import { google } from 'googleapis'
 import { getAuthenticatedClient } from '@/lib/google/auth'
-import { clusterFiles, chaosScore } from '@/lib/clusterFiles'
+import { clusterFiles, chaosScore, analyzeContentPattern, generateExplanation, generateDifferences } from '@/lib/clusterFiles'
 
 export async function GET() {
   try {
@@ -18,29 +18,38 @@ export async function GET() {
     const auth = getAuthenticatedClient(accessToken, refreshToken)
     const drive = google.drive({ version: 'v3', auth })
 
-    // 3. Fetch the 100 most recently modified files from Drive
+    // 3. Fetch the 300 most recently modified files from Drive
     const res = await drive.files.list({
-      pageSize: 100,
+      pageSize: 300,
       orderBy: 'modifiedTime desc',
       fields: 'files(id, name, mimeType, modifiedTime, size, owners, parents)',
       q: "trashed = false"
-    })
+    });
 
     const files = res.data.files || []
-    console.log('Drive files found:', files.length, files.map((f: any) => f.name))
+    console.log('Drive files found:', files.length, files.map((f: any) => f.name));
     const filenames = files.map((f: any) => f.name || '')
     // 4. Run our clustering logic on the real filenames
     const clusters = clusterFiles(filenames)
     const chaoticClusters = clusters
       .filter(c => c.length > 1)
-      .map(cluster => ({
-        files: cluster,
-        ...chaosScore(cluster),
-        // Attach the full Drive metadata for each file in the cluster
-        metadata: cluster.map((name: string) =>
-            files.find((f: any) => f.name === name) || { name }
+      .map(cluster => {
+        const contentAnalysis = analyzeContentPattern(cluster)
+        const metadata = cluster.map((name: string) =>
+          files.find((f: any) => f.name === name) || { name }
         )
-      }))
+        const differences = generateDifferences(cluster, metadata)
+        
+        return {
+          files: cluster,
+          ...chaosScore(cluster),
+          explanation: generateExplanation(cluster, contentAnalysis),
+          contentAnalysis,
+          differences,
+          // Attach the full Drive metadata for each file in the cluster
+          metadata
+        }
+      })
 
     return Response.json({
       success: true,
