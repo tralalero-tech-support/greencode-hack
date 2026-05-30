@@ -1,12 +1,17 @@
-import FileGraph     from "./components/NodeGraph";
-import ContextCard   from "./components/ContextCard";
-import NLSearch      from "./components/NLSearch";
-import VersionTree   from "./components/VersionTree";
+import { cookies } from "next/headers";
+import FileGraph      from "./components/NodeGraph";
+import ContextCard    from "./components/ContextCard";
+import NLSearch       from "./components/NLSearch";
+import VersionTree    from "./components/VersionTree";
 import DuplicateAlert from "./components/DuplicateAlert";
+import GoogleAuthButton from "./components/GoogleAuthButton";
 
 export const metadata = { title: "ContextOS" };
 
-export default function ContextOSPage() {
+export default async function ContextOSPage() {
+  const cookieStore = await cookies();
+  const signedIn = cookieStore.has("google_access_token");
+
   return (
     <div className="flex flex-col min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans">
       {/* Header */}
@@ -18,11 +23,9 @@ export default function ContextOSPage() {
             <p className="text-[10px] text-zinc-400 leading-tight mt-0.5">Smart File Management</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <span className="text-xs text-zinc-400">v0.1.0</span>
-          <button className="rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-medium px-4 py-2 transition-colors">
-            Upload Files
-          </button>
+          <GoogleAuthButton initialSignedIn={signedIn} />
         </div>
       </header>
 
