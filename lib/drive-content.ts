@@ -1,10 +1,13 @@
 import { google } from "googleapis";
 import type { OAuth2Client } from "googleapis-common";
 import mammoth from "mammoth";
-// pdf-parse has no bundled types — minimal inline declaration is in lib/pdf-parse.d.ts
-import pdfParse from "pdf-parse";
+import { createRequire } from "module";
 import { exportGoogleDoc } from "@/lib/google/drive";
 import type { DriveFile } from "@/lib/google/types";
+
+const require = createRequire(import.meta.url);
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const pdfParse = require("pdf-parse") as (buf: Buffer) => Promise<{ text: string }>;
 
 // Google Workspace formats — export via Drive API
 const EXPORT_AS_TEXT: Record<string, string> = {
