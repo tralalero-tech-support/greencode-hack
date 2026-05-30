@@ -9,9 +9,11 @@ import VersionTree     from "@/components/VersionTree";
 import DuplicateAlert  from "@/components/DuplicateAlert";
 import GoogleAuthButton from "@/components/GoogleAuthButton";
 
-export default function MainPage() {
+type Props = { initialSignedIn: boolean };
+
+export default function MainPage({ initialSignedIn }: Props) {
   const [activeTab, setActiveTab] = useState<'main' | 'duplicates'>('main')
-  const [signedIn, setSignedIn] = useState(false)
+  const [signedIn, setSignedIn] = useState(initialSignedIn)
   const router = useRouter()
   const searchParams = useSearchParams()
 
