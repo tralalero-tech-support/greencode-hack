@@ -263,9 +263,9 @@ export default function DuplicateAlert() {
                   )}
 
                   <div className="flex flex-wrap gap-1.5">
-                    {cluster.files.slice(0, 5).map((f) => (
+                    {cluster.files.slice(0, 5).map((f, idx) => (
                       <span
-                        key={f}
+                        key={`${f}-${idx}`}
                         className={`rounded-md ${clusterColor.tag} text-xs px-2 py-1 font-mono truncate max-w-[120px]`}
                       >
                         {f}
