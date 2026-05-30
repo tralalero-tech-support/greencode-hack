@@ -33,7 +33,7 @@ export default async function ContextOSPage() {
       </div>
 
       <main className="flex flex-1 gap-4 p-6 min-h-0">
-        <aside className="flex flex-col gap-4 w-56 flex-shrink-0">
+        <aside className="flex flex-col gap-4 w-56 shrink-0">
           <VersionTree />
           <ContextCard
             project="ASEAN Presentation"
