@@ -7,12 +7,12 @@ export async function GET(request: NextRequest) {
 
   const error = searchParams.get("error");
   if (error) {
-    return Response.redirect(new URL(`/greencode?auth_error=${encodeURIComponent(error)}`, request.url));
+    return Response.redirect(new URL(`/?auth_error=${encodeURIComponent(error)}`, request.url));
   }
 
   const code = searchParams.get("code");
   if (!code) {
-    return Response.redirect(new URL("/greencode?auth_error=missing_code", request.url));
+    return Response.redirect(new URL("/?auth_error=missing_code", request.url));
   }
 
   const tokens = await exchangeCodeForTokens(code);
@@ -38,5 +38,5 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  return Response.redirect(new URL("/greencode?auth_success=1", request.url));
+  return Response.redirect(new URL("/?auth_success=1", request.url));
 }

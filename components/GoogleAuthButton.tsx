@@ -13,11 +13,11 @@ export default function GoogleAuthButton({ initialSignedIn }: Props) {
   useEffect(() => {
     if (searchParams.get("auth_success")) {
       setSignedIn(true);
-      router.replace("/greencode");
+      router.replace("/");
     }
     if (searchParams.get("auth_error")) {
       setSignedIn(false);
-      router.replace("/greencode");
+      router.replace("/");
     }
   }, [searchParams, router]);
 
