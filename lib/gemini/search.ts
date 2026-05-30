@@ -32,15 +32,19 @@ If nothing matches, return an empty array: []`;
 
 const SUMMARIZE_SYSTEM_PROMPT = `You are a file indexing assistant for ContextOS, a smart Google Drive file manager.
 
-You will receive a JSON array of Drive files. For each file, write a concise 1-2 sentence summary that captures:
-- What the file is about
-- Who it involves (people, projects, organizations)
-- What kind of document it is
-- Any other detail that would help someone find it later using natural language
+You will receive a JSON array of Drive files. Each file may include a contentSnippet — actual text extracted from the file's body.
 
-This summary will be used to power natural language search, so focus on searchable context.
+For each file, write a 2-3 sentence summary that a person could use to find the file later by describing what it's about, NOT its filename. Prioritise the contentSnippet over the filename — the file may have a vague or unrelated name.
 
-Respond with valid JSON only:
+The summary must capture:
+- The actual subject matter and key topics (use the contentSnippet as the primary source)
+- Any people, organisations, projects, events, or places mentioned
+- The type of document and its purpose
+- Specific details someone might remember (e.g. "essay about Imperial stormtroopers in Star Wars", not just "essay")
+
+IMPORTANT: If a contentSnippet is provided, base the summary primarily on its content, not the filename.
+
+Respond with valid JSON only — no markdown:
 [{ "id": "<file id>", "summary": "..." }]`;
 
 function parseMatches(raw: string): OpenAIMatch[] {
