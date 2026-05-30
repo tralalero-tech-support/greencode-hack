@@ -21,34 +21,40 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "Missing ?since= parameter" }, { status: 400 });
   }
 
-  const auth = getAuthenticatedClient(accessToken, refreshToken);
+  try {
+    const auth = getAuthenticatedClient(accessToken, refreshToken);
 
-  // Only fetch files modified after the cached timestamp
-  const { files } = await listFiles(auth, {
-    query:    `modifiedTime > '${since}'`,
-    pageSize: 100,
-    orderBy:  "modifiedTime desc",
-  });
+    // Only fetch files modified after the cached timestamp
+    const { files } = await listFiles(auth, {
+      query:    `modifiedTime > '${since}'`,
+      pageSize: 100,
+      orderBy:  "modifiedTime desc",
+    });
 
-  if (files.length === 0) {
-    return Response.json({ newFiles: [] });
+    if (files.length === 0) {
+      return Response.json({ newFiles: [] });
+    }
+
+    // Extract content from all new files and summarize
+    const enriched   = await enrichFiles(auth, files);
+    const summaries  = await summarizeFiles(enriched);
+    const summaryMap = new Map(summaries.map((s) => [s.id, s.summary]));
+
+    const newFiles: CachedFile[] = enriched.map((f) => ({
+      id:           f.id,
+      name:         f.name,
+      mimeType:     f.mimeType,
+      modifiedTime: f.modifiedTime,
+      webViewLink:  f.webViewLink,
+      lastEditedBy: f.lastEditedBy,
+      owner:        f.owner,
+      summary:      summaryMap.get(f.id) ?? f.name,
+    }));
+
+    return Response.json({ newFiles });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Internal server error";
+    console.error("[/api/drive/sync]", err);
+    return Response.json({ error: message }, { status: 500 });
   }
-
-  // Extract content from all new files and summarize
-  const enriched   = await enrichFiles(auth, files);
-  const summaries  = await summarizeFiles(enriched);
-  const summaryMap = new Map(summaries.map((s) => [s.id, s.summary]));
-
-  const newFiles: CachedFile[] = enriched.map((f) => ({
-    id:           f.id,
-    name:         f.name,
-    mimeType:     f.mimeType,
-    modifiedTime: f.modifiedTime,
-    webViewLink:  f.webViewLink,
-    lastEditedBy: f.lastEditedBy,
-    owner:        f.owner,
-    summary:      summaryMap.get(f.id) ?? f.name,
-  }));
-
-  return Response.json({ newFiles });
 }

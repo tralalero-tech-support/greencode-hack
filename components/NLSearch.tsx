@@ -69,8 +69,16 @@ export default function NLSearch({ signedIn = false }: { signedIn?: boolean }) {
     cacheRef.current = null;
 
     fetch("/api/drive/summarize", { method: "POST" })
-      .then((r) => r.json())
-      .then((data: { files?: CachedFile[]; syncedAt?: string; latestModifiedTime?: string }) => {
+      .then(async (r) => {
+        const text = await r.text();
+        if (!r.ok) {
+          let message = `Server error ${r.status}`;
+          try { message = (JSON.parse(text) as { error?: string }).error ?? message; } catch {}
+          throw new Error(message);
+        }
+        return JSON.parse(text) as { files?: CachedFile[]; syncedAt?: string; latestModifiedTime?: string };
+      })
+      .then((data) => {
         if (!data.files) throw new Error("No files returned");
         const cache: DriveCache = {
           files:              data.files,
@@ -81,9 +89,10 @@ export default function NLSearch({ signedIn = false }: { signedIn?: boolean }) {
         cacheRef.current = cache;
         setIndexState({ status: "ready", fileCount: cache.files.length });
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : "Failed to index your Drive.";
         console.error("Indexing failed:", err);
-        setIndexState({ status: "error", message: "Failed to index your Drive. Try refreshing." });
+        setIndexState({ status: "error", message });
       });
   }
 

@@ -3,9 +3,9 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-type Props = { initialSignedIn: boolean };
+type Props = { initialSignedIn: boolean; onSignedInChange?: (signedIn: boolean) => void };
 
-export default function GoogleAuthButton({ initialSignedIn }: Props) {
+export default function GoogleAuthButton({ initialSignedIn, onSignedInChange }: Props) {
   const [signedIn, setSignedIn] = useState(initialSignedIn);
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -13,13 +13,15 @@ export default function GoogleAuthButton({ initialSignedIn }: Props) {
   useEffect(() => {
     if (searchParams.get("auth_success")) {
       setSignedIn(true);
+      onSignedInChange?.(true);
       router.replace("/");
     }
     if (searchParams.get("auth_error")) {
       setSignedIn(false);
+      onSignedInChange?.(false);
       router.replace("/");
     }
-  }, [searchParams, router]);
+  }, [searchParams, router, onSignedInChange]);
 
   if (signedIn) {
     return (
