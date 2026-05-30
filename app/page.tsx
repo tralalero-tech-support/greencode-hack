@@ -6,7 +6,7 @@ import VersionTree     from "@/components/VersionTree";
 import DuplicateAlert  from "@/components/DuplicateAlert";
 import GoogleAuthButton from "@/components/GoogleAuthButton";
 
-export const metadata = { title: "ContextOS" };
+export const metadata = { title: "FileAtlas" };
 
 export default async function ContextOSPage() {
   const cookieStore = await cookies();
@@ -16,9 +16,9 @@ export default async function ContextOSPage() {
     <div className="flex flex-col min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans">
       <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <div className="flex items-center gap-3">
-          <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-green-600 text-white text-sm font-bold">C</span>
+          <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-green-600 text-white text-sm font-bold">F</span>
           <div>
-            <h1 className="text-base font-bold text-zinc-900 dark:text-zinc-50 leading-none">ContextOS</h1>
+            <h1 className="text-base font-bold text-zinc-900 dark:text-zinc-50 leading-none">FileAtlas</h1>
             <p className="text-[10px] text-zinc-400 leading-tight mt-0.5">Smart File Management</p>
           </div>
         </div>
@@ -33,7 +33,7 @@ export default async function ContextOSPage() {
       </div>
 
       <main className="flex flex-1 gap-4 p-6 min-h-0">
-        <aside className="flex flex-col gap-4 w-56 flex-shrink-0">
+        <aside className="flex flex-col gap-4 w-56 shrink-0">
           <VersionTree />
           <ContextCard
             project="ASEAN Presentation"
