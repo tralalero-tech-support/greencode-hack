@@ -1,4 +1,4 @@
-import { getGeminiModel } from "./client";
+import { getOpenAIClient } from "./client";
 import type { DriveFile } from "@/lib/google/types";
 
 export type SearchResult = {
@@ -7,24 +7,23 @@ export type SearchResult = {
   reason: string;
 };
 
-type GeminiMatch = {
+type OpenAIMatch = {
   id: string;
   relevanceScore: number;
   reason: string;
 };
 
-// Strips fields Gemini doesn't need to save tokens
 function toSearchContext(file: DriveFile) {
   return {
-    id:               file.id,
-    name:             file.name,
-    type:             file.mimeType,
-    modified:         file.modifiedTime,
-    created:          file.createdTime,
-    owner:            file.owners?.[0]?.displayName,
-    lastEditedBy:     file.lastModifyingUser?.displayName,
-    description:      file.description ?? undefined,
-    contentSnippet:   (file as DriveFile & { contentSnippet?: string }).contentSnippet ?? undefined,
+    id:             file.id,
+    name:           file.name,
+    type:           file.mimeType,
+    modified:       file.modifiedTime,
+    created:        file.createdTime,
+    owner:          file.owners?.[0]?.displayName,
+    lastEditedBy:   file.lastModifyingUser?.displayName,
+    description:    file.description ?? undefined,
+    contentSnippet: (file as DriveFile & { contentSnippet?: string }).contentSnippet ?? undefined,
   };
 }
 
@@ -38,7 +37,7 @@ Your job:
 2. Score each match from 0.0 (not relevant) to 1.0 (perfect match).
 3. Return ONLY files with a score > 0.2, ranked from highest to lowest.
 
-Respond with valid JSON only — no markdown, no explanation outside the JSON.
+Respond with valid JSON only — no markdown, no extra text.
 Format:
 [
   {
@@ -50,42 +49,41 @@ Format:
 
 If nothing matches, return an empty array: []`;
 
-export async function searchDriveWithGemini(
+export async function searchDriveWithAI(
   query: string,
   files: DriveFile[]
 ): Promise<SearchResult[]> {
   if (files.length === 0) return [];
 
-  const model = getGeminiModel();
+  const client = getOpenAIClient();
   const fileContext = files.map(toSearchContext);
 
-  const prompt = `User query: "${query}"
-
-Drive files (${files.length} total):
-${JSON.stringify(fileContext, null, 2)}`;
-
-  const result = await model.generateContent({
-    systemInstruction: SYSTEM_PROMPT,
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature:      0.1, // low temp for consistent ranking
-    },
+  const completion = await client.chat.completions.create({
+    model:       "gpt-4o-mini",
+    temperature: 0.1,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      {
+        role:    "user",
+        content: `User query: "${query}"\n\nDrive files (${files.length} total):\n${JSON.stringify(fileContext, null, 2)}`,
+      },
+    ],
   });
 
-  const raw = result.response.text().trim();
+  const raw = completion.choices[0].message.content?.trim() ?? "";
 
-  let matches: GeminiMatch[];
+  let matches: OpenAIMatch[];
   try {
-    matches = JSON.parse(raw);
-    if (!Array.isArray(matches)) throw new Error("Not an array");
+    const parsed = JSON.parse(raw);
+    // response_format: json_object may wrap the array in a key
+    matches = Array.isArray(parsed) ? parsed : (parsed.results ?? parsed.files ?? Object.values(parsed)[0]);
+    if (!Array.isArray(matches)) throw new Error("No array found");
   } catch {
-    // If Gemini returns malformed JSON fall back to empty
-    console.error("Gemini returned invalid JSON:", raw);
+    console.error("OpenAI returned unexpected JSON:", raw);
     return [];
   }
 
-  // Map matches back to full file objects
   const fileMap = new Map(files.map((f) => [f.id, f]));
 
   return matches

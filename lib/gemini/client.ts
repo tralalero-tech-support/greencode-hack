@@ -1,16 +1,12 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 
-let _client: GoogleGenerativeAI | null = null;
+let _client: OpenAI | null = null;
 
-export function getGeminiClient(): GoogleGenerativeAI {
+export function getOpenAIClient(): OpenAI {
   if (!_client) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("Missing env var: GEMINI_API_KEY");
-    _client = new GoogleGenerativeAI(apiKey);
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error("Missing env var: OPENAI_API_KEY");
+    _client = new OpenAI({ apiKey });
   }
   return _client;
-}
-
-export function getGeminiModel(model = "gemini-2.0-flash") {
-  return getGeminiClient().getGenerativeModel({ model });
 }

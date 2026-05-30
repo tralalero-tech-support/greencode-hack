@@ -2,10 +2,10 @@ import { type NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { getAuthenticatedClient } from "@/lib/google/auth";
 import { listFiles, exportGoogleDoc } from "@/lib/google/drive";
-import { searchDriveWithGemini } from "@/lib/gemini/search";
+import { searchDriveWithAI } from "@/lib/gemini/search";
 import type { DriveFile } from "@/lib/google/types";
 
-// MIME types we can extract text from to give Gemini more signal
+// MIME types we can extract text from to give the model more signal
 const EXPORTABLE_TYPES: Record<string, string> = {
   "application/vnd.google-apps.document":     "text/plain",
   "application/vnd.google-apps.spreadsheet":  "text/csv",
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
   try {
     const auth = getAuthenticatedClient(accessToken, refreshToken);
 
-    // Fetch up to 200 files — enough context for Gemini without blowing the prompt
+    // Fetch up to 200 files — enough context without blowing the prompt
     const { files } = await listFiles(auth, {
       pageSize: 200,
       orderBy:  "modifiedTime desc",
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    const results = await searchDriveWithGemini(query, enriched);
+    const results = await searchDriveWithAI(query, enriched);
 
     return Response.json({ results });
   } catch (err) {
