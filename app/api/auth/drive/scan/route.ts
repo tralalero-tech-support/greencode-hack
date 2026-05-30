@@ -27,6 +27,7 @@ export async function GET() {
     })
 
     const files = res.data.files || []
+    console.log('Drive files found:', files.length, files.map((f: any) => f.name))
     const filenames = files.map((f: any) => f.name || '')
     // 4. Run our clustering logic on the real filenames
     const clusters = clusterFiles(filenames)
