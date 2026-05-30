@@ -52,7 +52,7 @@ export default async function ContextOSPage() {
       </main>
 
       <div className="px-6 pb-6">
-        <NLSearch />
+        <NLSearch signedIn={signedIn} />
       </div>
     </div>
   );
