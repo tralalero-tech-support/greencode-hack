@@ -130,6 +130,18 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
   const [addVerTo,   setAddVerTo]   = useState<string | null>(null);
   const [editVer,    setEditVer]    = useState<string | null>(null);
 
+  // ── File list expand state (folders with >5 files) ──────────────────────
+  const [expandedFileLists, setExpandedFileLists] = useState<string[]>([]);
+  const toggleFileList = (folderId: string) =>
+    setExpandedFileLists(p => p.includes(folderId) ? p.filter(x => x !== folderId) : [...p, folderId]);
+
+  // ── Drag-and-drop state ──────────────────────────────────────────────────
+  const [dragFile, setDragFile] = useState<{
+    fileId: string; fileDriveId?: string;
+    srcFolderId: string; srcFolderDriveId?: string;
+  } | null>(null);
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+
   // ── Derived ───────────────────────────────────────────────────────────────
   const activeProject = projects.find(p => p.id === activeProjectId) ?? null;
   const allVisible    = visibleTree(activeProject?.folders ?? [], expandedFolders);
@@ -214,6 +226,37 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
 
   function updateTopFolders(fn: (fs: Folder[]) => Folder[]) {
     setProjects(ps => ps.map(p => p.id !== activeProjectId ? p : { ...p, folders: fn(p.folders) }));
+  }
+
+  function moveFileBetweenFolders(fileId: string, srcFolderId: string, dstFolderId: string) {
+    setProjects(ps => ps.map(p => {
+      if (p.id !== activeProjectId) return p;
+      let moved: FileItem | undefined;
+      const step1 = updateFolderRec(srcFolderId, f => {
+        moved = f.files.find(fi => fi.id === fileId);
+        return { ...f, files: f.files.filter(fi => fi.id !== fileId) };
+      }, p.folders);
+      if (!moved) return p;
+      const file = moved;
+      const step2 = updateFolderRec(dstFolderId, f => ({ ...f, files: [...f.files, file] }), step1);
+      return { ...p, folders: step2 };
+    }));
+  }
+
+  async function handleFileDrop(targetFolder: Folder) {
+    if (!dragFile || dragFile.srcFolderId === targetFolder.id) {
+      setDragFile(null); setDragOverFolderId(null); return;
+    }
+    const { fileId, fileDriveId, srcFolderId, srcFolderDriveId } = dragFile;
+    moveFileBetweenFolders(fileId, srcFolderId, targetFolder.id);
+    setDragFile(null); setDragOverFolderId(null);
+    if (fileDriveId && targetFolder.driveId && srcFolderDriveId) {
+      await fetch("/api/drive/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileId: fileDriveId, addParentId: targetFolder.driveId, removeParentId: srcFolderDriveId }),
+      });
+    }
   }
 
   // ── CRUD ─────────────────────────────────────────────────────────────────
@@ -377,20 +420,28 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
   // ── Node styles ───────────────────────────────────────────────────────────
 
   const folderCls = (id: string) => {
-    const active = activeFolderIds.includes(id);
+    const active   = activeFolderIds.includes(id);
+    const dropOver = dragOverFolderId === id;
     return `flex items-center gap-1.5 px-3 py-2 rounded-lg border cursor-pointer select-none text-sm font-medium whitespace-nowrap transition-colors ${
-      active
-        ? "border-green-400 bg-green-50 dark:bg-green-950/50 text-green-700 dark:text-green-300"
-        : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300"
+      dropOver
+        ? "border-violet-400 bg-violet-50 dark:bg-violet-950/50 text-violet-700 dark:text-violet-300 ring-2 ring-violet-300"
+        : active
+          ? "border-green-400 bg-green-50 dark:bg-green-950/50 text-green-700 dark:text-green-300"
+          : dragFile
+            ? "border-dashed border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-500 hover:border-violet-300"
+            : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300"
     }`;
   };
 
   const fileCls = (id: string) => {
-    const active = activeFileIds.includes(id);
-    return `flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer select-none text-sm font-medium whitespace-nowrap transition-colors ${
-      active
-        ? "border-blue-400 bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300"
-        : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300"
+    const active    = activeFileIds.includes(id);
+    const dragging  = dragFile?.fileId === id;
+    return `flex items-center gap-2 px-3 py-2 rounded-lg border select-none text-sm font-medium whitespace-nowrap transition-colors ${
+      dragging
+        ? "border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-700 text-zinc-400 opacity-50 cursor-grabbing"
+        : active
+          ? "border-blue-400 bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 cursor-grab"
+          : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 cursor-grab"
     }`;
   };
 
@@ -580,10 +631,14 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
                       className={folderCls(f.id)}
                       onMouseEnter={() => setHovFolder(f.id)}
                       onMouseLeave={() => setHovFolder(null)}
-                      onClick={() => togglePinFolder(f.id)}>
+                      onClick={() => togglePinFolder(f.id)}
+                      onDragOver={e => { e.preventDefault(); setDragOverFolderId(f.id); }}
+                      onDragLeave={() => setDragOverFolderId(null)}
+                      onDrop={e => { e.preventDefault(); handleFileDrop(f); }}>
                       <span>📁</span>
                       <span>{f.name}</span>
-                      {pinFolders.includes(f.id) && <span className="ml-1 text-[10px] opacity-50">📌</span>}
+                      {dragOverFolderId === f.id && <span className="ml-auto text-[10px]">drop</span>}
+                      {pinFolders.includes(f.id) && dragOverFolderId !== f.id && <span className="ml-1 text-[10px] opacity-50">📌</span>}
                     </div>
                   </div>
                   {activeFolderIds.includes(f.id) && (
@@ -597,37 +652,63 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
                 </div>
               ))}
 
-              {/* + folder */}
-              <div className="mt-1 pl-5">
+              {/* + folder · collapse all */}
+              <div className="mt-1 pl-5 flex items-center gap-3">
                 {addFolder
                   ? <InlineForm placeholder="Folder name…" onConfirm={doAddFolder} onCancel={() => setAddFolder(false)} />
                   : <button className={BTN_ADD} onClick={() => setAddFolder(true)}>+ folder</button>
                 }
+                {expandedFolders.length > 0 && !addFolder && (
+                  <button
+                    className="text-[10px] text-zinc-400 hover:text-zinc-600 transition-colors"
+                    onClick={() => setExpandedFolders([])}>
+                    collapse all
+                  </button>
+                )}
               </div>
             </div>
 
             {/* ── Files ───────────────────────────────────────────────────── */}
             {shownFiles.length > 0 && (
               <div className="flex-shrink-0 flex flex-col gap-2 self-center">
-                {activeFolders.map(folder => (
-                  <div key={folder.id} className="flex flex-col gap-1.5">
-                    {activeFolders.length > 1 && (
-                      <div className="text-[10px] uppercase tracking-widest text-zinc-400 px-1">{folder.name}</div>
-                    )}
-                    {folder.files.map(fi => (
-                      <div key={fi.id}
-                        ref={el => { fileRefs.current[fi.id] = el; }}
-                        className={fileCls(fi.id)}
-                        onMouseEnter={() => setHovFile(fi.id)}
-                        onMouseLeave={() => setHovFile(null)}
-                        onClick={() => togglePinFile(fi.id)}>
-                        <span>{EXT_ICON[fi.ext] ?? "📄"}</span>
-                        <span>{fi.name}</span>
-                        {pinFiles.includes(fi.id) && <span className="ml-1 text-[10px] opacity-50">📌</span>}
-                      </div>
-                    ))}
-                  </div>
-                ))}
+                {activeFolders.map(folder => {
+                  const allFiles   = folder.files;
+                  const isExpanded = expandedFileLists.includes(folder.id);
+                  const LIMIT      = 5;
+                  const shown      = allFiles.length > LIMIT && !isExpanded
+                    ? allFiles.slice(0, LIMIT)
+                    : allFiles;
+                  const hidden     = allFiles.length - LIMIT;
+                  return (
+                    <div key={folder.id} className="flex flex-col gap-1.5">
+                      {activeFolders.length > 1 && (
+                        <div className="text-[10px] uppercase tracking-widest text-zinc-400 px-1">{folder.name}</div>
+                      )}
+                      {shown.map(fi => (
+                        <div key={fi.id}
+                          ref={el => { fileRefs.current[fi.id] = el; }}
+                          className={fileCls(fi.id)}
+                          draggable
+                          onDragStart={() => setDragFile({ fileId: fi.id, fileDriveId: fi.driveId, srcFolderId: folder.id, srcFolderDriveId: folder.driveId })}
+                          onDragEnd={() => { setDragFile(null); setDragOverFolderId(null); }}
+                          onMouseEnter={() => setHovFile(fi.id)}
+                          onMouseLeave={() => setHovFile(null)}
+                          onClick={() => togglePinFile(fi.id)}>
+                          <span>{EXT_ICON[fi.ext] ?? "📄"}</span>
+                          <span>{fi.name}</span>
+                          {pinFiles.includes(fi.id) && <span className="ml-1 text-[10px] opacity-50">📌</span>}
+                        </div>
+                      ))}
+                      {allFiles.length > LIMIT && (
+                        <button
+                          className="text-[10px] text-zinc-400 hover:text-zinc-600 text-left px-1 transition-colors"
+                          onClick={() => toggleFileList(folder.id)}>
+                          {isExpanded ? "▴ show less" : `▾ ${hidden} more file${hidden !== 1 ? "s" : ""}`}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -679,7 +760,7 @@ export default function FileGraph({ isSignedIn = false }: { isSignedIn?: boolean
         )}
 
         <div className="absolute bottom-3 right-4 text-[10px] text-zinc-400 select-none z-10">
-          hover to expand · click to pin 📌 · ▸ to expand folders
+          hover to expand · click to pin 📌 · drag file to move · ▸ to expand folders
         </div>
       </div>
     </>

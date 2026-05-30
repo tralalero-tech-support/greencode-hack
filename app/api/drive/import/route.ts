@@ -1,5 +1,4 @@
-import { cookies } from "next/headers";
-import { getAuthenticatedClient } from "@/lib/google/auth";
+import { getAuthFromCookies } from "@/lib/google/server-auth";
 import { listFiles, getFile } from "@/lib/google/drive";
 import type { OAuth2Client } from "googleapis-common";
 
@@ -49,16 +48,14 @@ async function buildTree(
 }
 
 export async function GET(request: Request) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("google_access_token")?.value;
-  if (!token) return Response.json({ error: "Not signed in" }, { status: 401 });
+  const auth = await getAuthFromCookies();
+  if (!auth) return Response.json({ error: "Not signed in" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
   const folderId = searchParams.get("folderId");
   if (!folderId) return Response.json({ error: "folderId required" }, { status: 400 });
 
   try {
-    const auth     = getAuthenticatedClient(token);
     const meta     = await getFile(auth, folderId);
     const contents = await buildTree(auth, folderId, 0);
     return Response.json({ name: meta.name, ...contents });

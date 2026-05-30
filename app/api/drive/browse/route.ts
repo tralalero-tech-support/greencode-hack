@@ -1,5 +1,4 @@
-import { cookies } from "next/headers";
-import { getAuthenticatedClient } from "@/lib/google/auth";
+import { getAuthFromCookies } from "@/lib/google/server-auth";
 import { listFiles } from "@/lib/google/drive";
 
 const FOLDER_MIME = "application/vnd.google-apps.folder";
@@ -14,15 +13,13 @@ function guessExt(name: string, mimeType: string): string {
 }
 
 export async function GET(request: Request) {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("google_access_token")?.value;
-  if (!token) return Response.json({ error: "Not signed in" }, { status: 401 });
+  const auth = await getAuthFromCookies();
+  if (!auth) return Response.json({ error: "Not signed in" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
   const folderId = searchParams.get("folderId") ?? "root";
 
   try {
-    const auth = getAuthenticatedClient(token);
     const { files: all } = await listFiles(auth, {
       folderId,
       fields: "id,name,mimeType",
