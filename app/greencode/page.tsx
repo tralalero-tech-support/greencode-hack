@@ -1,8 +1,8 @@
-import FileGraph     from "./components/NodeGraph";
-import ContextCard   from "./components/ContextCard";
-import NLSearch      from "./components/NLSearch";
-import VersionTree   from "./components/VersionTree";
-import DuplicateAlert from "./components/DuplicateAlert";
+import FileGraph     from "../../components/NodeGraph";
+import ContextCard   from "../../components/ContextCard";
+import NLSearch      from "../../components/NLSearch";
+import VersionTree   from "../../components/VersionTree";
+import DuplicateAlert from "../../components/DuplicateAlert";
 
 export const metadata = { title: "ContextOS" };
 
