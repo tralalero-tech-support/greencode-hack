@@ -24,13 +24,13 @@ export default function GoogleAuthButton({ initialSignedIn }: Props) {
   if (signedIn) {
     return (
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950 px-3 py-1.5">
-          <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
-          <span className="text-xs font-medium text-green-700 dark:text-green-400">Drive connected</span>
+        <div className="flex items-center gap-2 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 px-3 py-1.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-blue-500" />
+          <span className="text-xs font-medium text-blue-700 dark:text-blue-400">Drive connected</span>
         </div>
         <a
           href="/api/auth/signout"
-          className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+          className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
         >
           Sign out
         </a>
@@ -41,7 +41,7 @@ export default function GoogleAuthButton({ initialSignedIn }: Props) {
   return (
     <a
       href="/api/auth/google"
-      className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-200 transition-colors shadow-sm"
+      className="inline-flex items-center gap-2 rounded-lg border border-blue-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-slate-700 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 transition-colors shadow-sm"
     >
       <GoogleIcon />
       Sign in with Google

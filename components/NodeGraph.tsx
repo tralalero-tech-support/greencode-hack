@@ -80,10 +80,10 @@ const uid = (p: string) => `${p}-${++seq}`;
 
 // ── Shared micro-UI ───────────────────────────────────────────────────────────
 
-const INPUT = "flex-1 text-xs bg-transparent outline-none border-b border-zinc-300 dark:border-zinc-600 pb-px text-zinc-700 dark:text-zinc-200 placeholder:text-zinc-400 min-w-0";
-const BTN_OK = "text-[10px] text-green-500 hover:text-green-400 shrink-0";
-const BTN_X  = "text-[10px] text-zinc-400 hover:text-zinc-300 shrink-0";
-const BTN_ADD = "text-[10px] text-zinc-400 hover:text-green-500 transition-colors";
+const INPUT = "flex-1 text-xs bg-transparent outline-none border-b border-blue-200 dark:border-slate-600 pb-px text-slate-700 dark:text-slate-200 placeholder:text-slate-400 min-w-0";
+const BTN_OK = "text-[10px] text-blue-500 hover:text-blue-400 shrink-0";
+const BTN_X  = "text-[10px] text-slate-400 hover:text-slate-300 shrink-0";
+const BTN_ADD = "text-[10px] text-slate-400 hover:text-blue-500 transition-colors";
 
 function InlineForm({ placeholder, onConfirm, onCancel }: {
   placeholder: string; onConfirm: (v: string) => void; onCancel: () => void;
@@ -159,7 +159,7 @@ export default function FileGraph() {
     folders.forEach(f => {
       const el = folderRefs.current[f.id]; if (!el) return;
       const fb = mid(el);
-      next.push({ x1: pb.right, y1: pb.midY, x2: fb.left, y2: fb.midY, color: "#a1a1aa" });
+      next.push({ x1: pb.right, y1: pb.midY, x2: fb.left, y2: fb.midY, color: "#94a3b8" });
     });
 
     // Active folders → their files
@@ -169,7 +169,7 @@ export default function FileGraph() {
       f.files.forEach(fi => {
         const el = fileRefs.current[fi.id]; if (!el) return;
         const db = mid(el);
-        next.push({ x1: sb.right, y1: sb.midY, x2: db.left, y2: db.midY, color: "#6ee7b7" });
+        next.push({ x1: sb.right, y1: sb.midY, x2: db.left, y2: db.midY, color: "#60a5fa" });
       });
     });
 
@@ -239,8 +239,8 @@ export default function FileGraph() {
     const active = activeFolderIds.includes(id);
     return `flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer select-none text-sm font-medium whitespace-nowrap transition-colors ${
       active
-        ? "border-green-400 bg-green-50 dark:bg-green-950/50 text-green-700 dark:text-green-300"
-        : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-600"
+        ? "border-blue-400 bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300"
+        : "border-blue-100 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-blue-200 dark:hover:border-slate-600"
     }`;
   };
 
@@ -248,8 +248,8 @@ export default function FileGraph() {
     const active = activeFileIds.includes(id);
     return `flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer select-none text-sm font-medium whitespace-nowrap transition-colors ${
       active
-        ? "border-blue-400 bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300"
-        : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-600"
+        ? "border-sky-400 bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300"
+        : "border-blue-100 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-blue-200 dark:hover:border-slate-600"
     }`;
   };
 
@@ -257,9 +257,9 @@ export default function FileGraph() {
 
   return (
     <div ref={containerRef}
-      className="relative flex-1 min-h-0 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+      className="relative flex-1 min-h-0 overflow-hidden rounded-xl border border-blue-100 dark:border-slate-800 bg-blue-50 dark:bg-slate-900">
 
-      <div className="absolute top-3 left-4 text-xs font-semibold text-zinc-400 uppercase tracking-wide z-10">
+      <div className="absolute top-3 left-4 text-xs font-semibold text-slate-400 uppercase tracking-wide z-10">
         File Graph
       </div>
 
@@ -276,7 +276,7 @@ export default function FileGraph() {
         {/* ── Product ───────────────────────────────────────────────────────── */}
         <div className="flex-shrink-0">
           <div ref={productRef}
-            className="rounded-xl border-2 border-green-500 bg-green-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-green-500/20 whitespace-nowrap">
+            className="rounded-xl border-2 border-blue-500 bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-blue-500/20 whitespace-nowrap">
             ASEAN Project
           </div>
         </div>
@@ -322,7 +322,7 @@ export default function FileGraph() {
             {activeFolders.map(folder => (
               <div key={folder.id} className="flex flex-col gap-1.5">
                 {activeFolders.length > 1 && (
-                  <div className="text-[10px] uppercase tracking-widest text-zinc-400 px-1">{folder.name}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-slate-400 px-1">{folder.name}</div>
                 )}
                 {folder.files.map(fi => (
                   <div key={fi.id}
@@ -347,18 +347,18 @@ export default function FileGraph() {
             {activeFilesData.map(fi => (
               <div key={fi.id} className="flex flex-col gap-1.5">
                 {activeFilesData.length > 1 && (
-                  <div className="text-[10px] uppercase tracking-widest text-zinc-400 px-1">{fi.name}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-slate-400 px-1">{fi.name}</div>
                 )}
 
                 {fi.versions.map((v, i) => (
                   <div key={v.id} ref={el => { verRefs.current[v.id] = el; }}
                     className={`px-3 py-2 rounded-lg border text-xs whitespace-nowrap ${
                       i === 0
-                        ? "border-emerald-300 bg-emerald-50 dark:bg-emerald-950/40"
-                        : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800"
+                        ? "border-blue-300 bg-blue-50 dark:bg-blue-950/40"
+                        : "border-blue-100 dark:border-slate-700 bg-white dark:bg-slate-800"
                     }`}>
                     <div className="flex items-start gap-2">
-                      <span className={`font-bold shrink-0 ${i === 0 ? "text-emerald-600 dark:text-emerald-400" : "text-zinc-400"}`}>
+                      <span className={`font-bold shrink-0 ${i === 0 ? "text-blue-600 dark:text-blue-400" : "text-slate-400"}`}>
                         {v.id.split("-").pop()?.toUpperCase()}
                       </span>
                       <div className="flex-1 min-w-0">
@@ -366,7 +366,7 @@ export default function FileGraph() {
                           ? <InlineForm placeholder={v.label}
                               onConfirm={val => doEditVersion(v.id, val || v.label)}
                               onCancel={() => setEditVer(null)} />
-                          : <div className={`font-medium cursor-text ${i === 0 ? "text-emerald-700 dark:text-emerald-300" : "text-zinc-600 dark:text-zinc-300"}`}
+                          : <div className={`font-medium cursor-text ${i === 0 ? "text-blue-700 dark:text-blue-300" : "text-slate-600 dark:text-slate-300"}`}
                               onClick={() => { setEditVer(v.id); setEditVerVal(v.label); }}>
                               {v.label}
                             </div>
@@ -391,7 +391,7 @@ export default function FileGraph() {
         )}
       </div>
 
-      <div className="absolute bottom-3 right-4 text-[10px] text-zinc-400 select-none">
+      <div className="absolute bottom-3 right-4 text-[10px] text-slate-400 select-none">
         hover to expand · click to pin 📌 multiple
       </div>
     </div>

@@ -15,15 +15,15 @@ const chaoticClusters = clusters.filter(c => c.length > 1)
 const colorMap = {
   red:   { border: 'border-red-200 dark:border-red-800',   bg: 'bg-red-50 dark:bg-red-950/40',     icon: 'text-red-500',   title: 'text-red-800 dark:text-red-300',   sub: 'text-red-600 dark:text-red-400',   tag: 'border-red-200 dark:border-red-700 text-red-700 dark:text-red-400'   },
   amber: { border: 'border-amber-200 dark:border-amber-800', bg: 'bg-amber-50 dark:bg-amber-950/40', icon: 'text-amber-500', title: 'text-amber-800 dark:text-amber-300', sub: 'text-amber-600 dark:text-amber-400', tag: 'border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-400' },
-  green: { border: 'border-green-200 dark:border-green-800', bg: 'bg-green-50 dark:bg-green-950/40', icon: 'text-green-500', title: 'text-green-800 dark:text-green-300', sub: 'text-green-600 dark:text-green-400', tag: 'border-green-200 dark:border-green-700 text-green-700 dark:text-green-400' },
+  green: { border: 'border-blue-200 dark:border-blue-800', bg: 'bg-blue-50 dark:bg-blue-950/40', icon: 'text-blue-500', title: 'text-blue-800 dark:text-blue-300', sub: 'text-blue-600 dark:text-blue-400', tag: 'border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-400' },
 }
 
 export default function DuplicateAlert() {
   if (chaoticClusters.length === 0) {
     return (
-      <div className="flex items-center gap-3 rounded-xl border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/40 p-4">
-        <span className="text-green-500 text-lg">✓</span>
-        <p className="text-sm font-semibold text-green-800 dark:text-green-300">
+      <div className="flex items-center gap-3 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 p-4">
+        <span className="text-blue-500 text-lg">✓</span>
+        <p className="text-sm font-semibold text-blue-800 dark:text-blue-300">
           No duplicates detected
         </p>
       </div>
@@ -50,7 +50,7 @@ export default function DuplicateAlert() {
                 {cluster.map((f) => (
                   <span
                     key={f}
-                    className={`rounded-md bg-white dark:bg-zinc-900 border ${c.tag} text-xs px-2 py-0.5 font-mono`}
+                    className={`rounded-md bg-white dark:bg-slate-900 border ${c.tag} text-xs px-2 py-0.5 font-mono`}
                   >
                     {f}
                   </span>

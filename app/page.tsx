@@ -5,6 +5,7 @@ import NLSearch        from "@/components/NLSearch";
 import VersionTree     from "@/components/VersionTree";
 import DuplicateAlert  from "@/components/DuplicateAlert";
 import GoogleAuthButton from "@/components/GoogleAuthButton";
+import ThemeToggle     from "@/components/ThemeToggle";
 
 export const metadata = { title: "FileAtlas" };
 
@@ -13,17 +14,18 @@ export default async function ContextOSPage() {
   const signedIn = cookieStore.has("google_access_token");
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans">
-      <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+    <div className="flex flex-col min-h-screen bg-blue-50 dark:bg-slate-950 font-sans">
+      <header className="flex items-center justify-between px-6 py-4 border-b border-blue-100 dark:border-slate-800 bg-white dark:bg-slate-900">
         <div className="flex items-center gap-3">
-          <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-green-600 text-white text-sm font-bold">F</span>
+          <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-600 text-white text-sm font-bold">F</span>
           <div>
-            <h1 className="text-base font-bold text-zinc-900 dark:text-zinc-50 leading-none">FileAtlas</h1>
-            <p className="text-[10px] text-zinc-400 leading-tight mt-0.5">Smart File Management</p>
+            <h1 className="text-base font-bold text-slate-900 dark:text-slate-50 leading-none">FileAtlas</h1>
+            <p className="text-[10px] text-slate-400 leading-tight mt-0.5">Smart File Management</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-zinc-400">v0.1.0</span>
+          <span className="text-xs text-slate-400">v0.1.0</span>
+          <ThemeToggle />
           <GoogleAuthButton initialSignedIn={signedIn} />
         </div>
       </header>
