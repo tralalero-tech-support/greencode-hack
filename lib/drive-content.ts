@@ -1,16 +1,19 @@
 import { google } from "googleapis";
 import type { OAuth2Client } from "googleapis-common";
+import mammoth from "mammoth";
+// pdf-parse has no bundled types — minimal inline declaration is in lib/pdf-parse.d.ts
+import pdfParse from "pdf-parse";
 import { exportGoogleDoc } from "@/lib/google/drive";
 import type { DriveFile } from "@/lib/google/types";
 
-// Google Workspace formats — export as plain text
+// Google Workspace formats — export via Drive API
 const EXPORT_AS_TEXT: Record<string, string> = {
   "application/vnd.google-apps.document":     "text/plain",
   "application/vnd.google-apps.spreadsheet":  "text/csv",
   "application/vnd.google-apps.presentation": "text/plain",
 };
 
-// Uploaded text-based files — download directly
+// Uploaded plain-text files — download and decode directly
 const DOWNLOAD_AS_TEXT = new Set([
   "text/plain",
   "text/markdown",
@@ -21,24 +24,47 @@ const DOWNLOAD_AS_TEXT = new Set([
   "text/xml",
 ]);
 
-const SNIPPET_LIMIT  = 2000; // chars — enough to capture key topics and names
-const MAX_CONCURRENT = 5;    // parallel Drive API requests
+// Uploaded binary Office/PDF files — download and parse
+const OFFICE_DOCX = new Set([
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+  "application/msword",                                                        // .doc
+]);
 
-async function streamToText(stream: NodeJS.ReadableStream): Promise<string> {
+const SNIPPET_LIMIT  = 2000;
+const MAX_CONCURRENT = 5;
+
+async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks).toString("utf-8").replace(/\s+/g, " ").trim();
+  return Buffer.concat(chunks);
 }
 
-async function downloadFile(auth: OAuth2Client, fileId: string): Promise<string | null> {
+async function downloadBuffer(auth: OAuth2Client, fileId: string): Promise<Buffer | null> {
   try {
     const drive = google.drive({ version: "v3", auth });
-    const res = await drive.files.get(
+    const res   = await drive.files.get(
       { fileId, alt: "media" },
       { responseType: "stream" }
     );
-    const text = await streamToText(res.data as unknown as NodeJS.ReadableStream);
-    return text.slice(0, SNIPPET_LIMIT) || null;
+    return streamToBuffer(res.data as unknown as NodeJS.ReadableStream);
+  } catch {
+    return null;
+  }
+}
+
+async function extractDocx(buf: Buffer): Promise<string | null> {
+  try {
+    const { value } = await mammoth.extractRawText({ buffer: buf });
+    return value.replace(/\s+/g, " ").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+async function extractPdf(buf: Buffer): Promise<string | null> {
+  try {
+    const { text } = await pdfParse(buf);
+    return text.replace(/\s+/g, " ").trim() || null;
   } catch {
     return null;
   }
@@ -49,15 +75,35 @@ export async function extractContent(
   file: DriveFile
 ): Promise<string | null> {
   try {
+    // Google Workspace — use Drive export API
     const exportMime = EXPORT_AS_TEXT[file.mimeType];
     if (exportMime) {
       const stream = await exportGoogleDoc(auth, file.id, exportMime);
-      const text   = await streamToText(stream);
-      return text.slice(0, SNIPPET_LIMIT) || null;
+      const buf    = await streamToBuffer(stream);
+      return buf.toString("utf-8").replace(/\s+/g, " ").trim().slice(0, SNIPPET_LIMIT) || null;
     }
 
+    // Plain text — download and decode
     if (DOWNLOAD_AS_TEXT.has(file.mimeType)) {
-      return downloadFile(auth, file.id);
+      const buf = await downloadBuffer(auth, file.id);
+      if (!buf) return null;
+      return buf.toString("utf-8").replace(/\s+/g, " ").trim().slice(0, SNIPPET_LIMIT) || null;
+    }
+
+    // Word documents (.docx / .doc) — parse with mammoth
+    if (OFFICE_DOCX.has(file.mimeType)) {
+      const buf  = await downloadBuffer(auth, file.id);
+      if (!buf) return null;
+      const text = await extractDocx(buf);
+      return text?.slice(0, SNIPPET_LIMIT) ?? null;
+    }
+
+    // PDF — parse with pdf-parse
+    if (file.mimeType === "application/pdf") {
+      const buf  = await downloadBuffer(auth, file.id);
+      if (!buf) return null;
+      const text = await extractPdf(buf);
+      return text?.slice(0, SNIPPET_LIMIT) ?? null;
     }
 
     return null;
@@ -66,7 +112,7 @@ export async function extractContent(
   }
 }
 
-// Run tasks with a concurrency cap to avoid hitting Drive API rate limits
+// Run tasks with a concurrency cap to stay within Drive API rate limits
 export async function withConcurrency<T, R>(
   items: T[],
   limit: number,
@@ -86,10 +132,7 @@ export async function withConcurrency<T, R>(
   return results;
 }
 
-export async function enrichFiles(
-  auth: OAuth2Client,
-  files: DriveFile[]
-) {
+export async function enrichFiles(auth: OAuth2Client, files: DriveFile[]) {
   return withConcurrency(files, MAX_CONCURRENT, async (file) => {
     const content = await extractContent(auth, file);
     return {
