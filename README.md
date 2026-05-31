@@ -67,6 +67,37 @@ The goal: make it immediately obvious how your files relate to each other, surfa
 
 ---
 
+## What's Next
+
+FileAtlas started as a hackathon project, but we're planning to grow it into a fully-featured file intelligence platform. Here's where we're taking it:
+
+### Smarter AI Integration
+- **Context-aware suggestions**: Instead of just naming files, the AI will understand the full project context — suggesting where a new file belongs, flagging when a file seems out of place, and recommending related files when you open one
+- **Auto-tagging and summarization**: Automatically generate descriptions and tags for files based on their content, making search and discovery dramatically faster
+- **Conflict detection**: Warn when two files appear to cover the same topic or serve the same purpose, before the duplication becomes a problem
+
+### Richer Graph Visualization
+- **Multi-drive support**: Connect multiple Google Drive accounts or workspaces and view them in a single unified graph
+- **Cross-project relationships**: Draw connections between files in different projects that reference or depend on each other
+- **Activity heatmap**: Visually highlight files that have been recently edited, are overdue for review, or haven't been touched in a long time
+- **Collaborative cursors**: See where teammates are in the graph in real time
+
+### Deeper File Management
+- **Version diffing**: Click any two versions of a file to see a side-by-side diff without leaving the app
+- **Bulk operations**: Select multiple nodes and move, tag, or archive them in one action
+- **Folder templates**: Save a folder structure as a reusable template to spin up new projects instantly
+- **Integration beyond Google Drive**: Support for Dropbox, OneDrive, Notion, and local file systems
+
+### Platform & Collaboration
+- **Persistent projects**: Save project graphs to a database so they survive across sessions and can be shared with a link
+- **Team workspaces**: Invite collaborators to a shared graph with role-based permissions
+- **Comments and annotations**: Leave notes directly on nodes in the graph, tied to specific files or folders
+- **Slack / email digests**: Get a weekly summary of what changed across your projects
+
+We see FileAtlas becoming the layer between your files and your work — a way to understand your own knowledge base at a glance, keep it organized without effort, and find anything instantly.
+
+---
+
 ## Running Locally
 
 ```bash
