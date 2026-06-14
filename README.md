@@ -61,8 +61,8 @@ The goal: make it immediately obvious how your files relate to each other, surfa
 | Name | GitHub |
 |------|--------|
 | Ansh Nayak | [@AnshN009](https://github.com/AnshN009) |
-| Taran Duba | |
-| Mukesh Ramanathan | |
+| Taran Duba | [@taran-duba](https://github.com/taran-duba) |
+| Mukesh Ramanathan | [@mukiewukie](https://github.com/mukiewukie) |
 | Hannah Kim | |
 
 ---
